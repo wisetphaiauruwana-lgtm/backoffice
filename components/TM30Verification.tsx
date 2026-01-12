@@ -4,6 +4,8 @@ import { useData } from '../contexts/DataContext';
 import { Customer, Gender } from '../types';
 import Button from './ui/Button';
 import { Search, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Calendar, Printer, FileSpreadsheet } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
+import AccessDenied from './ui/AccessDenied';
 
 // Represents a single guest row for the TM.30 Excel format
 interface TM30ExcelGuest {
@@ -43,6 +45,10 @@ const getGenderCode = (gender: Gender): string => {
 
 const TM30Verification: React.FC = () => {
     const { customers } = useData();
+    const { can } = usePermissions();
+    const canView = can('tm30Verification', 'view');
+    const canSubmit = can('tm30Verification', 'submit');
+    const canExport = can('tm30Verification', 'export');
     const [searchTerm, setSearchTerm] = useState('');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [currentPage, setCurrentPage] = useState(1);
@@ -177,6 +183,9 @@ const TM30Verification: React.FC = () => {
         return pageNumbers;
     };
 
+    if (!canView) {
+        return <AccessDenied message="You do not have permission to view TM.30 verification." />;
+    }
 
     return (
         <div>
@@ -235,9 +244,9 @@ const TM30Verification: React.FC = () => {
                                 className="text-sm bg-white text-black focus:outline-none placeholder-gray-500"
                             />
                         </div>
-                        <Button variant="primary">Generate Report</Button>
-                        <Button className="!bg-green-600 hover:!bg-green-700 focus:!ring-green-500" leftIcon={<FileSpreadsheet size={16} />}>Export to Excel</Button>
-                        <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => window.print()}>Print / Export PDF</Button>
+                        <Button variant="primary" disabled={!canSubmit}>Generate Report</Button>
+                        <Button className="!bg-green-600 hover:!bg-green-700 focus:!ring-green-500" leftIcon={<FileSpreadsheet size={16} />} disabled={!canExport}>Export to Excel</Button>
+                        <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => window.print()} disabled={!canExport}>Print / Export PDF</Button>
                     </div>
                 </div>
 

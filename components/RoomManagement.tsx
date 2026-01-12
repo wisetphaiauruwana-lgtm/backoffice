@@ -11,6 +11,8 @@ import Modal from "./ui/Modal";
 import ConfirmationModal from "./ui/ConfirmationModal";
 import RoomDetailsModal from "./RoomDetailsModal";
 import Table, { Column } from "./ui/Table";
+import AccessDenied from "./ui/AccessDenied";
+import { usePermissions } from "../hooks/usePermissions";
 
 import {
   PlusCircle,
@@ -51,6 +53,13 @@ const RoomManagement: React.FC = () => {
   const { rooms, customers, setRooms, fetchRooms } = useData();
   const location = useLocation();
   const navigate = useNavigate();
+  const { can } = usePermissions();
+  const canView = can("roomManagement", "view");
+  const canCreate = can("roomManagement", "create");
+  const canEdit = can("roomManagement", "edit");
+  const canEditStatus = can("roomManagement", "editStatus");
+  const canDelete = can("roomManagement", "delete");
+  const denyView = !canView;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
@@ -154,7 +163,8 @@ const RoomManagement: React.FC = () => {
     setRooms((currentRooms) =>
       (currentRooms ?? []).map((room) => {
         const idStr = String((room as any).id ?? (room as any).ID ?? "");
-        if (idStr === String(roomId)) {
+        const roomCodeStr = String((room as any).roomCode ?? (room as any).roomNumber ?? "");
+        if (idStr === String(roomId) || roomCodeStr === String(roomId)) {
           const updatedValue = field === "maxOccupancy" ? Number(value) : value;
           return { ...room, [field]: updatedValue };
         }
@@ -296,6 +306,7 @@ const RoomManagement: React.FC = () => {
   };
 
   const openEditRoom = (room: Room) => {
+    if (!canEdit && !canEditStatus) return;
     setActiveRoom(room);
     setModalMode("edit");
     setIsModalOpen(true);
@@ -304,6 +315,7 @@ const RoomManagement: React.FC = () => {
   // Create
   const handleSaveRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreate) return;
 
     const selectedRoomTypeID = getRoomTypeIdFromType(newRoom.type);
 
@@ -372,6 +384,7 @@ const RoomManagement: React.FC = () => {
 
   // Delete ✅ (supports id / ID)
   const handleConfirmDelete = async () => {
+    if (!canDelete) return;
     if (!roomToDelete) {
       setRoomToDelete(null);
       return;
@@ -492,6 +505,10 @@ const RoomManagement: React.FC = () => {
   const currentGuest = activeRoomCustomer?.fullName;
   const checkOutDateForModal = (activeRoomCustomer as any)?.checkOutDate;
 
+  if (denyView) {
+    return <AccessDenied message="You do not have permission to view rooms." />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 p-6">
       <div className="max-w-[1800px] mx-auto">
@@ -582,6 +599,7 @@ const RoomManagement: React.FC = () => {
                 leftIcon={<PlusCircle size={18} />}
                 onClick={() => setCreateModalOpen(true)}
                 className="!bg-gradient-to-r !from-green-600 !to-emerald-600 hover:!from-green-700 hover:!to-emerald-700 !shadow-lg hover:!shadow-xl !transform hover:!scale-105 !transition-all !duration-200"
+                disabled={!canCreate}
               >
                 Create Room
               </Button>
@@ -619,20 +637,23 @@ const RoomManagement: React.FC = () => {
                     title="Edit"
                     aria-label={`Edit room ${room.roomCode ?? room.roomNumber}`}
                     className="group flex items-center justify-center w-9 h-9 text-gray-500 hover:text-amber-600 rounded-lg hover:bg-amber-50 transition-all duration-200 hover:scale-110"
+                    disabled={!canEdit && !canEditStatus}
                   >
                     <Pencil size={18} className="group-hover:scale-110 transition-transform" />
                   </button>
 
                   {/* Delete */}
-                  <button
-                    type="button"
-                    onClick={() => setRoomToDelete(room)}
-                    title="Delete"
-                    aria-label={`Delete room ${room.roomCode ?? room.roomNumber}`}
-                    className="group flex items-center justify-center w-9 h-9 text-gray-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-all duration-200 hover:scale-110"
-                  >
-                    <Trash2 size={18} className="group-hover:scale-110 transition-transform" />
-                  </button>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => setRoomToDelete(room)}
+                      title="Delete"
+                      aria-label={`Delete room ${room.roomCode ?? room.roomNumber}`}
+                      className="group flex items-center justify-center w-9 h-9 text-gray-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-all duration-200 hover:scale-110"
+                    >
+                      <Trash2 size={18} className="group-hover:scale-110 transition-transform" />
+                    </button>
+                  )}
                 </div>
               )}
             />
@@ -891,6 +912,8 @@ const RoomManagement: React.FC = () => {
         checkOutDate={checkOutDateForModal}
         onUpdateRoom={handleUpdateRoom}
         mode={modalMode}
+        canEdit={canEdit}
+        canEditStatus={canEditStatus}
       />
     </div>
   );

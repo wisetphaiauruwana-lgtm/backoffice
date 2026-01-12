@@ -11,20 +11,22 @@ import {
   FileText,
   Settings,
 } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface SidebarProps {
   onLogout: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
+  const { can } = usePermissions();
   const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/bookings', icon: CalendarCheck, label: 'Bookings' },
-    { to: '/rooms', icon: BedDouble, label: 'Room Management' },
-    { to: '/customers', icon: User, label: 'Customer List' },
-    { to: '/reports', icon: FileText, label: 'Gov Reports' },
-    { to: '/roles', icon: ShieldCheck, label: 'Roles & Permissions' },
-    { to: '/settings', icon: Settings, label: 'Settings' },
+    { to: '/bookings', icon: CalendarCheck, label: 'Bookings', permission: { module: 'bookingManagement', action: 'view' } },
+    { to: '/rooms', icon: BedDouble, label: 'Room Management', permission: { module: 'roomManagement', action: 'view' } },
+    { to: '/customers', icon: User, label: 'Customer List', permission: { module: 'customerList', action: 'view' } },
+    { to: '/reports', icon: FileText, label: 'Gov Reports', permission: { module: 'tm30Verification', action: 'view' } },
+    { to: '/roles', icon: ShieldCheck, label: 'Roles & Permissions', permission: { module: 'rolesAndPermissions', action: 'view' } },
+    { to: '/settings', icon: Settings, label: 'Settings', permission: { module: 'rolesAndPermissions', action: 'view' } },
   ];
 
   const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
@@ -48,12 +50,17 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-6 space-y-1">
-        {navItems.map(item => (
-          <NavLink key={item.to} to={item.to} className={navLinkClasses}>
-            <item.icon className="w-5 h-5 opacity-80 group-hover:opacity-100" />
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
+        {navItems
+          .filter((item) => {
+            if (!item.permission) return true;
+            return can(item.permission.module as any, item.permission.action as any);
+          })
+          .map(item => (
+            <NavLink key={item.to} to={item.to} className={navLinkClasses}>
+              <item.icon className="w-5 h-5 opacity-80 group-hover:opacity-100" />
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
       </nav>
 
       {/* Logout */}

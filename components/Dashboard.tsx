@@ -1,10 +1,11 @@
 // src/components/Dashboard.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBookings } from "../contexts/BookingsContext";
 import { useData } from "../contexts/DataContext";
 import Table from "./ui/Table";
 import Modal from "./ui/Modal";
+import { guestsService } from "../services/guests.service";
 
 import { Customer, Guest, BookingStatus } from "../types";
 import {
@@ -69,6 +70,25 @@ const dateOnly = (value?: string) => {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+};
+
+const toLocalDateMs = (value?: string) => {
+  const d = dateOnly(value);
+  if (!d) return NaN;
+  const [y, m, day] = d.split("-").map(Number);
+  const dt = new Date(y, m - 1, day);
+  return dt.getTime();
+};
+
+const normalizeGuestName = (g: any, fallback: string) => {
+  const name =
+    g?.fullName ??
+    g?.full_name ??
+    g?.name ??
+    g?.guestName ??
+    g?.guest_name ??
+    [g?.firstName ?? g?.first_name, g?.lastName ?? g?.last_name].filter(Boolean).join(" ");
+  return String(name || "").trim() || fallback;
 };
 
 /* ---------------- Status ---------------- */
@@ -174,6 +194,22 @@ const Dashboard: React.FC = () => {
   const { rooms = [] } = useData();
   const navigate = useNavigate();
   const today = useMemo(() => getLocalDateISO(), []);
+  const [guests, setGuests] = useState<Guest[]>([]);
+
+  useEffect(() => {
+    let isActive = true;
+    guestsService
+      .fetchAll()
+      .then((data) => {
+        if (isActive) setGuests(data ?? []);
+      })
+      .catch((err) => {
+        console.error("[Dashboard] fetch guests failed", err);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   // ✅ Booking Details Modal state
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
@@ -217,6 +253,23 @@ const Dashboard: React.FC = () => {
     });
   }, [bookings]);
 
+  const bookingGroupMap = useMemo(() => {
+    const rows = groupByBooking(customers, () => true);
+    return new Map(rows.map((r) => [String(r.bookingId), r]));
+  }, [customers]);
+
+  const guestsByBookingId = useMemo(() => {
+    const map = new Map<string, Guest[]>();
+    (guests ?? []).forEach((g: any) => {
+      const bookingId = String(g?.bookingId ?? g?.booking_id ?? "").trim();
+      if (!bookingId) return;
+      const list = map.get(bookingId) ?? [];
+      list.push(g);
+      map.set(bookingId, list);
+    });
+    return map;
+  }, [guests]);
+
   /* ---------------- Validation ---------------- */
   const isPersonComplete = (p: Customer | Guest) =>
     ["passportId", "occupation", "currentAddress"].every((f) => {
@@ -232,10 +285,27 @@ const Dashboard: React.FC = () => {
   }, [customers]);
 
   const todaysCheckOutRows: BookingGroupRow[] = useMemo(() => {
-    return groupByBooking(customers, (c) => {
-      if (dateOnly(c.checkOutDate) !== today) return false;
-      return (c.roomStays ?? []).some((rs) => rs.bookingStatus === BookingStatus.CheckedOut);
+    const rows: BookingGroupRow[] = [];
+    const seen = new Set<string>();
+
+    (guests ?? []).forEach((g: any) => {
+      const bookingId = String(g?.bookingId ?? g?.booking_id ?? "").trim();
+      if (!bookingId || seen.has(bookingId)) return;
+
+      const row = bookingGroupMap.get(bookingId);
+      if (!row) return;
+
+      if (dateOnly(row.originalBooking.checkOutDate) !== today) return;
+
+      seen.add(bookingId);
+      rows.push(row);
     });
+
+    return rows;
+  }, [bookingGroupMap, guests, today]);
+
+  const todaysCheckInRows: BookingGroupRow[] = useMemo(() => {
+    return groupByBooking(customers, (c) => dateOnly(c.checkInDate) === today);
   }, [customers, today]);
 
   /* ---------------- KPI ---------------- */
@@ -243,7 +313,7 @@ const Dashboard: React.FC = () => {
     const totalRooms = rooms.length;
     const availableRooms = rooms.filter((r: any) => r.status === "Available").length;
 
-    const todaysCheckIns = customers.filter((c) => dateOnly(c.checkInDate) === today).length;
+    const todaysCheckIns = todaysCheckInRows.length;
     const todaysCheckOuts = todaysCheckOutRows.length;
 
     return {
@@ -252,7 +322,7 @@ const Dashboard: React.FC = () => {
       todaysCheckIns,
       todaysCheckOuts,
     };
-  }, [rooms, customers, today, todaysCheckOutRows]);
+  }, [rooms, today, todaysCheckOutRows, todaysCheckInRows]);
 
   /* ---------------- Missing Registration ---------------- */
   const missingRegCount = useMemo(() => {
@@ -268,14 +338,35 @@ const Dashboard: React.FC = () => {
 
   /* ---------------- Recent Check-Ins (top 5) ---------------- */
   const recentCheckIns: BookingGroupRow[] = useMemo(() => {
-    return [...checkedInRows]
+    const rows: BookingGroupRow[] = [];
+    const seen = new Set<string>();
+
+    (guests ?? []).forEach((g: any) => {
+      const bookingId = String(g?.bookingId ?? g?.booking_id ?? "").trim();
+      if (!bookingId || seen.has(bookingId)) return;
+
+      if (typeof g?.isMainGuest === "boolean" && !g.isMainGuest) return;
+
+      const row = bookingGroupMap.get(bookingId);
+      if (!row) return;
+
+      if (row.bookingStatus !== BookingStatus.CheckedIn) return;
+
+      seen.add(bookingId);
+      rows.push(row);
+    });
+
+    return rows
       .sort((a, b) => {
-        const ad = new Date(a.originalBooking.checkInDate ?? 0).getTime();
-        const bd = new Date(b.originalBooking.checkInDate ?? 0).getTime();
+        const ad = toLocalDateMs(a.originalBooking.checkInDate);
+        const bd = toLocalDateMs(b.originalBooking.checkInDate);
+        if (Number.isNaN(ad) && Number.isNaN(bd)) return 0;
+        if (Number.isNaN(ad)) return 1;
+        if (Number.isNaN(bd)) return -1;
         return bd - ad;
       })
       .slice(0, 5);
-  }, [checkedInRows]);
+  }, [bookingGroupMap, guests]);
 
   /* ---------------- Table Columns ---------------- */
   const columns = useMemo(
@@ -342,7 +433,7 @@ const Dashboard: React.FC = () => {
             columns={columns}
             data={recentCheckIns}
             renderRowActions={(row: BookingGroupRow) => (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center gap-2">
                 {/* View icon only */}
                 <button
                   type="button"
@@ -381,18 +472,20 @@ const Dashboard: React.FC = () => {
             columns={columns}
             data={todaysCheckOutRows}
             renderRowActions={(row: BookingGroupRow) => (
-              <button
-                type="button"
-                onClick={() => openBookingModal(row, "view")}
-                title="View"
-                aria-label="View booking details"
-                className="group flex items-center justify-center w-8 h-8
-                           text-gray-500 hover:text-blue-600
-                           rounded-lg hover:bg-blue-50
-                           transition-all duration-200 hover:scale-110"
-              >
-                <Eye size={16} className="group-hover:scale-110 transition-transform" />
-              </button>
+              <div className="flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => openBookingModal(row, "view")}
+                  title="View"
+                  aria-label="View booking details"
+                  className="group flex items-center justify-center w-8 h-8
+                             text-gray-500 hover:text-blue-600
+                             rounded-lg hover:bg-blue-50
+                             transition-all duration-200 hover:scale-110"
+                >
+                  <Eye size={16} className="group-hover:scale-110 transition-transform" />
+                </button>
+              </div>
             )}
           />
         </Section>
@@ -478,23 +571,30 @@ const Dashboard: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                {(activeBookingRow.originalBooking.guestList ?? []).length === 0 ? (
-                  <div className="text-sm text-gray-500">—</div>
-                ) : (
-                  (activeBookingRow.originalBooking.guestList ?? []).map((g: any, idx: number) => (
+                {(() => {
+                  const bookingId = String(activeBookingRow.bookingId ?? "");
+                  const apiGuests = guestsByBookingId.get(bookingId) ?? [];
+                  const fallbackGuests = activeBookingRow.originalBooking.guestList ?? [];
+                  const list = apiGuests.length > 0 ? apiGuests : fallbackGuests;
+
+                  if (list.length === 0) {
+                    return <div className="text-sm text-gray-500">—</div>;
+                  }
+
+                  return list.map((g: any, idx: number) => (
                     <div
-                      key={idx}
+                      key={`${bookingId}-${idx}`}
                       className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50"
                     >
                       <div className="text-sm font-medium text-gray-900">
-                        {g?.fullName ?? g?.name ?? `Guest ${idx + 1}`}
+                        {normalizeGuestName(g, `Guest ${idx + 1}`)}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {g?.nationality ?? "—"} • {g?.idNumber ?? "—"}
+                        {g?.nationality ?? "—"} • {g?.idNumber ?? g?.documentNumber ?? "—"}
                       </div>
                     </div>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </div>
 

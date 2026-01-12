@@ -21,10 +21,15 @@ import Toast from "./ui/Toast";
 import { roomsService } from "../services/rooms.service";
 import { customersService } from "../services/customers.service";
 import { bookingsService } from "../services/bookings.service";
+import { usePermissions } from "../hooks/usePermissions";
+import AccessDenied from "./ui/AccessDenied";
 
 const CreateBooking: React.FC = () => {
   const navigate = useNavigate();
   const { rooms, setRooms } = useData();
+  const { can } = usePermissions();
+  const canCreate = can("bookingManagement", "create");
+  const denyCreate = !canCreate;
 
   // -----------------------
   // State
@@ -134,6 +139,7 @@ const CreateBooking: React.FC = () => {
   useEffect(() => {
     fetchRoomsFromServer();
   }, []);
+
 
   const handleBookingDetailChange = useCallback((field: keyof typeof bookingDetails, value: any) => {
     setBookingDetails((prev) => {
@@ -455,6 +461,10 @@ const CreateBooking: React.FC = () => {
       return [...prev, room];
     });
   }, []);
+
+  if (denyCreate) {
+    return <AccessDenied message="You do not have permission to create bookings." />;
+  }
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20">

@@ -13,6 +13,7 @@ import GovernmentReports from './components/GovernmentReports';
 import Settings from './components/Settings';
 import AccountSetup from './components/AccountSetup';
 import BookingDetailsModal from './components/BookingDetailsModal';
+import ForgotPassword from './components/ForgotPassword';
 
 import { DataProvider } from './contexts/DataContext';
 import { BookingsProvider } from './contexts/BookingsContext';
@@ -40,6 +41,8 @@ const App: React.FC = () => {
             />
 
             <Route path="/setup-account" element={<AccountSetup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/forgot-password/:token" element={<ForgotPassword />} />
 
             <Route
               path="/"

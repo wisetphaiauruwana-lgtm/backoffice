@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, UserCircle, Calendar, Home, Mail, User } from 'lucide-react';
 import Modal from './ui/Modal';
-import { Customer } from '../../types';
+import { Customer } from '../types';
 
 interface BookingDetailsModalProps {
   isOpen: boolean;
@@ -12,10 +12,23 @@ interface BookingDetailsModalProps {
 }
 
 // Helper function to format date
+const parseLocalDateValue = (value: string): Date | null => {
+  if (!value) return null;
+  const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const y = Number(dateOnlyMatch[1]);
+    const m = Number(dateOnlyMatch[2]);
+    const d = Number(dateOnlyMatch[3]);
+    return new Date(y, m - 1, d);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const formatDateOnly = (value?: string) => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return '—';
+  if (!value) return '?';
+  const d = parseLocalDateValue(value);
+  if (!d) return '?';
 
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -151,18 +164,21 @@ const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
 
   const mainId = `main-${(customer as any).id}`;
 
-  // ถ้ายังไม่ได้เลือกแขกหรือเป็น Main Booker ให้ใช้ email ของ customer
+  let person: any = customer;
+
+  // ???????????????????????????? Main Booker ?????? customer
   if (!selectedGuestId || selectedGuestId === mainId) {
-    return { ...customer, email: customer.email }; // ใช้ email ของ customer โดยตรง
+    person = customer;
+  } else {
+    const idxMatch = selectedGuestId.match(/^g-(\d+)$/);
+    if (idxMatch) {
+      const idx = Number(idxMatch[1]);
+      person = rawGuestList?.[idx] ?? customer;
+    }
   }
 
-  const idxMatch = selectedGuestId.match(/^g-(\d+)$/);
-  if (idxMatch) {
-    const idx = Number(idxMatch[1]);
-    return rawGuestList?.[idx] ?? customer;
-  }
-
-  return customer;
+  // ??????????? CreateBooking (customer.email) ????
+  return { ...person, email: customer.email };
 }, [customer, selectedGuestId, rawGuestList]);
 
 const guests = useMemo(() => {

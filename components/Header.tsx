@@ -1,7 +1,31 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bell, User } from 'lucide-react';
 
 const Header: React.FC = () => {
+  const [displayName, setDisplayName] = useState('Admin');
+  const [displayEmail, setDisplayEmail] = useState('—');
+
+  useEffect(() => {
+    const stored = localStorage.getItem('auth_admin');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        const name = parsed?.full_name || parsed?.fullName || parsed?.name;
+        const email = parsed?.username || parsed?.email;
+        if (name) setDisplayName(String(name));
+        if (email) setDisplayEmail(String(email));
+        return;
+      } catch {
+        // ignore parsing errors and fall back
+      }
+    }
+
+    const remembered = localStorage.getItem('remembered_email');
+    if (remembered) {
+      setDisplayEmail(remembered);
+    }
+  }, []);
+
   return (
     <header className="h-20 px-6 bg-white border-b border-gray-200 flex items-center justify-end">
       <div className="flex items-center gap-6">
@@ -18,8 +42,8 @@ const Header: React.FC = () => {
           </div>
 
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-gray-800">Admin User</p>
-            <p className="text-xs text-gray-500">admin@horizon.com</p>
+            <p className="text-sm font-semibold text-gray-800">{displayName}</p>
+            <p className="text-xs text-gray-500">{displayEmail}</p>
           </div>
         </div>
       </div>

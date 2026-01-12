@@ -215,7 +215,7 @@ export interface Consent {
 
 export type UserStatus = 'Active' | 'Pending Invite';
 
-export type Role = 'Super Admin' | 'Manager' | 'Receptionist' | 'Cleaner' | 'Accountant';
+export type Role = 'owner' | 'Manager' | 'Receptionist' | 'Cleaner';
 
 export interface User {
   id: string;
@@ -266,3 +266,5 @@ export interface PendingApproval {
   dateApplied: string;
   status: ApprovalStatus;
 }
+
+export type SettingsCategory = 'general' | 'users' | 'email' | 'security';

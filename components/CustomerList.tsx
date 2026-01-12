@@ -8,6 +8,7 @@ import type { Column } from "./ui/Table";
 
 import ConfirmationModal from "./ui/ConfirmationModal";
 import CustomerDetailsModal from "./CustomerDetailsModal";
+import AccessDenied from "./ui/AccessDenied";
 import {
   Eye,
   Pencil, // ✅ ADD
@@ -22,8 +23,14 @@ import {
   X,
 } from "lucide-react";
 import { guestsService } from "../services/guests.service";
+import { usePermissions } from "../hooks/usePermissions";
 
 const CustomerList: React.FC = () => {
+  const { can } = usePermissions();
+  const canView = can("customerList", "view");
+  const canEdit = can("customerList", "edit");
+  const canDelete = can("customerList", "delete");
+  const denyView = !canView;
   const [allGuests, setAllGuests] = useState<CustomerListItem[]>([]);
   const [guests, setGuests] = useState<CustomerListItem[]>([]);
 
@@ -144,6 +151,7 @@ const CustomerList: React.FC = () => {
 };
 
 const openEditCustomer = async (customer: CustomerListItem) => {
+  if (!canEdit) return;
   try {
     const detail = await guestsService.getById(customer.id);
     setActiveCustomer(detail);
@@ -162,6 +170,7 @@ const openEditCustomer = async (customer: CustomerListItem) => {
 };
 
   const handleUpdateCustomer = async (updated: Customer) => {
+    if (!canEdit) return;
     try {
       await guestsService.update(updated.id!, updated);
 
@@ -262,6 +271,7 @@ const openEditCustomer = async (customer: CustomerListItem) => {
   }, [location.state]);
 
   const handleConfirmDelete = async () => {
+    if (!canDelete) return;
     if (!customerToDelete) return;
 
     try {
@@ -297,6 +307,10 @@ const openEditCustomer = async (customer: CustomerListItem) => {
   ];
 
   const getRowClassName = () => "";
+
+  if (denyView) {
+    return <AccessDenied message="You do not have permission to view customers." />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-indigo-50">
@@ -396,24 +410,28 @@ const openEditCustomer = async (customer: CustomerListItem) => {
     </button>
 
     {/* Edit */}
-    <button
-      onClick={() => openEditCustomer(customer)}
-      title="Edit"
-      aria-label={`Edit ${customer.fullName}`}
-      className="group flex items-center justify-center w-9 h-9 text-gray-500 hover:text-amber-600 rounded-lg hover:bg-amber-50 transition-all duration-200 hover:scale-110"
-    >
-      <Pencil size={18} className="group-hover:scale-110 transition-transform" />
-    </button>
+    {canEdit && (
+      <button
+        onClick={() => openEditCustomer(customer)}
+        title="Edit"
+        aria-label={`Edit ${customer.fullName}`}
+        className="group flex items-center justify-center w-9 h-9 text-gray-500 hover:text-amber-600 rounded-lg hover:bg-amber-50 transition-all duration-200 hover:scale-110"
+      >
+        <Pencil size={18} className="group-hover:scale-110 transition-transform" />
+      </button>
+    )}
 
     {/* Delete */}
-    <button
-      onClick={() => setCustomerToDelete(customer)}
-      title="Delete"
-      aria-label={`Delete ${customer.fullName}`}
-      className="group flex items-center justify-center w-9 h-9 text-gray-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-all duration-200 hover:scale-110"
-    >
-      <Trash2 size={18} className="group-hover:scale-110 transition-transform" />
-    </button>
+    {canDelete && (
+      <button
+        onClick={() => setCustomerToDelete(customer)}
+        title="Delete"
+        aria-label={`Delete ${customer.fullName}`}
+        className="group flex items-center justify-center w-9 h-9 text-gray-500 hover:text-red-600 rounded-lg hover:bg-red-50 transition-all duration-200 hover:scale-110"
+      >
+        <Trash2 size={18} className="group-hover:scale-110 transition-transform" />
+      </button>
+    )}
   </div>
 )}
 

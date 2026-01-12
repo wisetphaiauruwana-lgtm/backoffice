@@ -17,25 +17,27 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { usePermissions } from "../hooks/usePermissions";
+import AccessDenied from "./ui/AccessDenied";
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 interface ReportGuest {
-  checkInDateTime: string;
+  checkInDateTime: string; // YYYY-MM-DD
   roomNumber: string;
   fullName: string;
   nationality: string;
   idNumber: string;
   currentAddress: string;
-  checkOutDateTime: string | null;
+  checkOutDateTime: string | null; // YYYY-MM-DD | null
   remarks: string;
 }
 
 interface DateRange {
-  start: string;
-  end: string;
+  start: string; // YYYY-MM-DD
+  end: string; // YYYY-MM-DD
 }
 
 // ============================================================================
@@ -45,50 +47,32 @@ interface DateRange {
 const ENTRIES_PER_PAGE_OPTIONS = [10, 25, 50];
 const MAX_PAGE_BUTTONS = 5;
 
+// ✅ Print + Screen styles
 const PRINT_STYLES = `
-  @page { 
-    size: A4 landscape; 
-    margin: 8mm; 
-  }
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
 
-  @media print {
-    body * { visibility: hidden; }
+@media print {
+  html, body { width: 100%; height: 100%; }
+  body * { visibility: hidden; }
 
-    #print-table-only,
-    #print-table-only * { visibility: visible; }
+  #report-page, #report-page * { visibility: visible; }
+  #report-page { position: absolute; left: 0; top: 0; width: 100%; }
 
-    #print-table-only {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: none !important;
-      box-shadow: none !important;
-      background: white;
-    }
+  .no-print { display: none !important; }
 
-    #print-table-only table {
-      width: 100%;
-      border-collapse: collapse;
-      border: 1px solid #000;
-    }
+  table { width: 100% !important; border-collapse: collapse !important; font-size: 12px !important; }
+  thead { display: table-header-group; }  /* ✅ header repeats */
+  tfoot { display: table-footer-group; }
+  tr { page-break-inside: avoid; }
+  td, th { break-inside: avoid; }
+}
 
-    #print-table-only th,
-    #print-table-only td {
-      border: 1px solid #000;
-      padding: 6px 8px;
-      font-size: 11px;
-      color: #000;
-    }
-
-    #print-table-only thead { display: table-header-group; }
-
-    #print-table-only tr { page-break-inside: avoid; }
-
-    .no-print { display: none !important; }
-  }
+/* ✅ Screen: ช่วยให้เห็นครบคอลัมน์ง่ายขึ้น */
+#report-page table { font-size: 11px; }
+#report-page th, #report-page td { padding: 4px; }
 `;
 
 // ============================================================================
@@ -136,6 +120,7 @@ const getWeekRange = (): DateRange => {
 const extractRoomNumber = (booking: any): string => {
   if (!booking) return "-";
 
+  // booking.rooms[] style
   if (Array.isArray(booking.rooms) && booking.rooms.length > 0) {
     const roomNumbers = booking.rooms
       .map(
@@ -144,6 +129,10 @@ const extractRoomNumber = (booking: any): string => {
           r?.room?.room_code ||
           r?.room?.roomNumber ||
           r?.room?.room_number ||
+          r?.roomCode ||
+          r?.room_code ||
+          r?.roomNumber ||
+          r?.room_number ||
           ""
       )
       .filter(Boolean);
@@ -151,11 +140,16 @@ const extractRoomNumber = (booking: any): string => {
     if (roomNumbers.length > 0) return roomNumbers.join(", ");
   }
 
+  // single room style
   return (
     booking.room?.roomCode ||
     booking.room?.room_code ||
     booking.room?.roomNumber ||
     booking.room?.room_number ||
+    booking.roomCode ||
+    booking.room_code ||
+    booking.roomNumber ||
+    booking.room_number ||
     "-"
   );
 };
@@ -169,6 +163,70 @@ const buildBookingMap = (bookings: Booking[]): Map<string, any> => {
   return map;
 };
 
+const safeText = (v: any): string => {
+  if (v === null || v === undefined) return "";
+  return String(v).trim();
+};
+
+const buildFullName = (g: any): string => {
+  const first =
+    g?.firstName ||
+    g?.first_name ||
+    g?.givenName ||
+    g?.given_name ||
+    g?.name ||
+    g?.fullName ||
+    g?.full_name ||
+    "";
+  const last =
+    g?.lastName ||
+    g?.last_name ||
+    g?.surname ||
+    g?.familyName ||
+    g?.family_name ||
+    "";
+
+  const full = `${safeText(first)} ${safeText(last)}`.trim();
+  return full || safeText(g?.fullName || g?.full_name) || "-";
+};
+
+const buildIdNumber = (g: any): string => {
+  return (
+    safeText(g?.idNumber) ||
+    safeText(g?.id_number) ||
+    safeText(g?.citizenId) ||
+    safeText(g?.citizen_id) ||
+    safeText(g?.passportNumber) ||
+    safeText(g?.passport_number) ||
+    "-"
+  );
+};
+
+const buildAddress = (g: any): string => {
+  const direct =
+    safeText(g?.currentAddress) ||
+    safeText(g?.current_address) ||
+    safeText(g?.address) ||
+    safeText(g?.current_address_text);
+
+  if (direct) return direct;
+
+  const subdistrict = safeText(g?.subdistrict || g?.tambon);
+  const district = safeText(g?.district || g?.amphoe);
+  const province = safeText(g?.province);
+  const country = safeText(g?.country);
+
+  const parts = [subdistrict, district, province, country].filter(Boolean);
+  return parts.length ? parts.join(" / ") : "-";
+};
+
+const guestInRange = (checkInISO: string, startTs: number, endTs: number): boolean => {
+  const d = new Date(checkInISO);
+  if (Number.isNaN(d.getTime())) return true;
+  const ts = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  return ts >= startTs && ts <= endTs;
+};
+
 // ============================================================================
 // SUB COMPONENTS
 // ============================================================================
@@ -176,36 +234,29 @@ const buildBookingMap = (bookings: Booking[]): Map<string, any> => {
 const PageHeader: React.FC<{
   onExportExcel: () => void;
   onPrint: () => void;
-}> = ({ onExportExcel, onPrint }) => (
+  loading: boolean;
+}> = ({ onExportExcel, onPrint, loading }) => (
   <div className="no-print mb-6">
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <div className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-xl bg-blue-50 border flex items-center justify-center">
-            <Building2 className="h-5 w-5 text-blue-700" />
-          </div>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900">
-              Government Reports
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              R.R.4 Registry (ทะเบียนผู้พัก) — export Excel / print PDF
-            </p>
-          </div>
+    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-blue-50 border flex items-center justify-center">
+          <Building2 className="h-5 w-5 text-blue-700" />
+        </div>
+        <div>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900">Government Reports</h1>
+          <p className="text-sm text-gray-500 mt-1">R.R.4 Registry (ทะเบียนผู้พัก) — export Excel / print</p>
         </div>
       </div>
 
-      <div className="hidden md:flex items-center gap-2">
-        <Button
-          className="!bg-green-600 hover:!bg-green-700 focus:!ring-green-500"
-          leftIcon={<FileSpreadsheet size={16} />}
-          onClick={onExportExcel}
-        >
-          Export Excel
+      <div className="flex items-center gap-2 justify-end">
+        <Button onClick={onExportExcel} disabled={loading}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+          <span className="ml-2">Export Excel</span>
         </Button>
 
-        <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={onPrint}>
-          Print / PDF
+        <Button onClick={onPrint} disabled={loading}>
+          <Printer className="h-4 w-4" />
+          <span className="ml-2">Print</span>
         </Button>
       </div>
     </div>
@@ -261,7 +312,7 @@ const DateRangePicker: React.FC<{
 }> = ({ dateRange, onChange }) => (
   <div>
     <label className="block text-xs font-semibold text-gray-600 mb-1">Date range</label>
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 bg-white focus-within:ring-2 focus-within:ring-blue-500">
         <Calendar size={16} className="text-gray-600" />
         <input
@@ -273,7 +324,7 @@ const DateRangePicker: React.FC<{
         />
       </div>
 
-      <span className="text-gray-400 text-sm">to</span>
+      <span className="text-gray-400">→</span>
 
       <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 bg-white focus-within:ring-2 focus-within:ring-blue-500">
         <Calendar size={16} className="text-gray-600" />
@@ -309,37 +360,22 @@ const FilterSummary: React.FC<{
 );
 
 const ReportTableHeader: React.FC = () => (
-  <thead className="sticky top-0 bg-gray-100 text-black">
+  <thead className="bg-gray-100 text-black">
     <tr>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
-        เลขลำดับ
-      </th>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
-        วันเวลาที่เข้ามาพัก
-      </th>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
-        ห้องพักเลขที่
-      </th>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
-        ชื่อตัวและชื่อสกุล
-      </th>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
-        สัญชาติ
-      </th>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
+      <th className="border border-black px-1 py-1 text-center font-bold">เลขลำดับ</th>
+      <th className="border border-black px-1 py-1 text-center font-bold">วันเวลาที่เข้ามาพัก</th>
+      <th className="border border-black px-1 py-1 text-center font-bold">ห้องพักเลขที่</th>
+      <th className="border border-black px-1 py-1 text-center font-bold">ชื่อตัวและชื่อสกุล</th>
+      <th className="border border-black px-1 py-1 text-center font-bold">สัญชาติ</th>
+      <th className="border border-black px-1 py-1 text-center font-bold">
         เลขประจำตัวประชาชน / หนังสือเดินทาง
       </th>
-      <th className="border border-black px-2 py-2 text-center font-bold">
+      <th className="border border-black px-1 py-1 text-center font-bold">
         ที่อยู่ปัจจุบัน
-        <br />
-        <span className="font-normal">(ตำบล / อำเภอ / จังหวัด / ประเทศ)</span>
+        <div className="font-normal text-[10px]">(ตำบล / อำเภอ / จังหวัด / ประเทศ)</div>
       </th>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
-        วันเวลาที่ออกไป
-      </th>
-      <th className="border border-black px-2 py-2 text-center font-bold whitespace-nowrap">
-        หมายเหตุ
-      </th>
+      <th className="border border-black px-1 py-1 text-center font-bold">วันเวลาที่ออกไป</th>
+      <th className="border border-black px-1 py-1 text-center font-bold">หมายเหตุ</th>
     </tr>
   </thead>
 );
@@ -349,18 +385,18 @@ const ReportTableRow: React.FC<{ guest: ReportGuest; index: number; rowNumber: n
   index,
   rowNumber,
 }) => (
-  <tr
-    className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-yellow-50 transition`}
-  >
-    <td className="border border-black p-1 text-center align-top">{rowNumber}</td>
-    <td className="border border-black p-1 text-center align-top">{guest.checkInDateTime}</td>
-    <td className="border border-black p-1 text-center align-top">{guest.roomNumber}</td>
-    <td className="border border-black p-1 align-top">{guest.fullName}</td>
-    <td className="border border-black p-1 text-center align-top">{guest.nationality}</td>
-    <td className="border border-black p-1 align-top">{guest.idNumber}</td>
-    <td className="border border-black p-1 align-top">{guest.currentAddress}</td>
-    <td className="border border-black p-1 text-center align-top">{guest.checkOutDateTime || ""}</td>
-    <td className="border border-black p-1 align-top">{guest.remarks}</td>
+  <tr className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+    <td className="border border-black px-1 py-1 text-center align-top">{rowNumber}</td>
+    <td className="border border-black px-1 py-1 text-center align-top">{guest.checkInDateTime}</td>
+    <td className="border border-black px-1 py-1 text-center align-top">{guest.roomNumber}</td>
+    <td className="border border-black px-1 py-1 align-top break-words">{guest.fullName}</td>
+    <td className="border border-black px-1 py-1 text-center align-top">{guest.nationality}</td>
+    <td className="border border-black px-1 py-1 align-top break-words">{guest.idNumber}</td>
+    <td className="border border-black px-1 py-1 align-top break-words whitespace-pre-wrap">
+      {guest.currentAddress}
+    </td>
+    <td className="border border-black px-1 py-1 text-center align-top">{guest.checkOutDateTime || ""}</td>
+    <td className="border border-black px-1 py-1 align-top break-words">{guest.remarks}</td>
   </tr>
 );
 
@@ -369,50 +405,23 @@ const PaginationControls: React.FC<{
   totalPages: number;
   onPageChange: (page: number) => void;
 }> = ({ currentPage, totalPages, onPageChange }) => {
-  const renderPageNumbers = () => {
-    const pageNumbers: React.ReactNode[] = [];
-    let startPage: number, endPage: number;
+  const pages = useMemo(() => {
+    if (totalPages <= 1) return [];
+    const half = Math.floor(MAX_PAGE_BUTTONS / 2);
 
-    if (totalPages <= MAX_PAGE_BUTTONS) {
-      startPage = 1;
-      endPage = totalPages;
-    } else {
-      const halfMax = Math.floor(MAX_PAGE_BUTTONS / 2);
-      const afterHalf = Math.ceil(MAX_PAGE_BUTTONS / 2) - 1;
+    let start = Math.max(1, currentPage - half);
+    let end = Math.min(totalPages, start + MAX_PAGE_BUTTONS - 1);
+    start = Math.max(1, end - MAX_PAGE_BUTTONS + 1);
 
-      if (currentPage <= halfMax) {
-        startPage = 1;
-        endPage = MAX_PAGE_BUTTONS;
-      } else if (currentPage + afterHalf >= totalPages) {
-        startPage = totalPages - MAX_PAGE_BUTTONS + 1;
-        endPage = totalPages;
-      } else {
-        startPage = currentPage - halfMax;
-        endPage = currentPage + afterHalf;
-      }
-    }
+    const arr: number[] = [];
+    for (let p = start; p <= end; p++) arr.push(p);
+    return arr;
+  }, [currentPage, totalPages]);
 
-    for (let i = startPage; i <= endPage; i++) {
-      pageNumbers.push(
-        <button
-          key={i}
-          onClick={() => onPageChange(i)}
-          className={`px-3 py-1.5 text-sm rounded-lg border transition ${
-            currentPage === i
-              ? "bg-blue-600 text-white border-blue-600"
-              : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-          }`}
-        >
-          {i}
-        </button>
-      );
-    }
-
-    return pageNumbers;
-  };
+  if (totalPages <= 1) return null;
 
   return (
-    <nav aria-label="Pagination" className="flex items-center space-x-1">
+    <nav aria-label="Pagination" className="no-print flex items-center justify-center gap-1 mt-4">
       <button
         onClick={() => onPageChange(1)}
         disabled={currentPage === 1}
@@ -431,11 +440,23 @@ const PaginationControls: React.FC<{
         <ChevronLeft size={16} />
       </button>
 
-      {renderPageNumbers()}
+      {pages.map((p) => (
+        <button
+          key={p}
+          onClick={() => onPageChange(p)}
+          className={`px-3 py-2 rounded-lg border text-sm ${
+            p === currentPage
+              ? "border-blue-500 bg-blue-50 text-blue-700 font-bold"
+              : "border-gray-200 text-gray-700 hover:bg-gray-50"
+          }`}
+        >
+          {p}
+        </button>
+      ))}
 
       <button
         onClick={() => onPageChange(currentPage + 1)}
-        disabled={currentPage === totalPages || totalPages === 0}
+        disabled={currentPage === totalPages}
         className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
         title="Next Page"
       >
@@ -444,7 +465,7 @@ const PaginationControls: React.FC<{
 
       <button
         onClick={() => onPageChange(totalPages)}
-        disabled={currentPage === totalPages || totalPages === 0}
+        disabled={currentPage === totalPages}
         className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
         title="Last Page"
       >
@@ -459,6 +480,9 @@ const PaginationControls: React.FC<{
 // ============================================================================
 
 const GovernmentReports: React.FC = () => {
+  const { can } = usePermissions();
+  const canView = can("tm30Verification", "view");
+  const canExport = can("tm30Verification", "export");
   const initialWeek = getWeekRange();
 
   const [dateRange, setDateRange] = useState<DateRange>(initialWeek);
@@ -510,80 +534,101 @@ const GovernmentReports: React.FC = () => {
 
   const rawReportData = useMemo<ReportGuest[]>(() => {
     return (guests ?? []).map((guest) => {
-      const anyGuest = guest as any;
-      const bookingId = anyGuest.bookingId ?? anyGuest.booking_id;
-      const booking = getBookingById(bookingId) as any;
+      const g: any = guest as any;
 
-      const checkInDate = formatDateOnly(
-        booking?.checkInDate ??
-          booking?.check_in_date ??
-          booking?.startDate ??
-          booking?.start_date ??
-          anyGuest.createdAt ??
-          anyGuest.created_at
-      );
+      const bookingId = g.bookingId ?? g.booking_id ?? g.booking?.id ?? g.booking?.ID ?? null;
+      const booking: any = getBookingById(bookingId);
 
-      const checkOutDate = formatDateOnly(
-        booking?.checkOutDate ??
-          booking?.check_out_date ??
-          booking?.checkedOutAt ??
-          booking?.checked_out_at ??
-          booking?.endDate ??
-          booking?.end_date ??
-          null
-      );
+      const checkIn =
+        g.checkInDateTime ||
+        g.check_in_date_time ||
+        g.checkIn ||
+        g.check_in ||
+        booking?.checkInDateTime ||
+        booking?.check_in_date_time ||
+        booking?.checkIn ||
+        booking?.check_in ||
+        booking?.createdAt ||
+        booking?.created_at ||
+        null;
+
+      const checkOut =
+        g.checkOutDateTime ||
+        g.check_out_date_time ||
+        g.checkOut ||
+        g.check_out ||
+        booking?.checkOutDateTime ||
+        booking?.check_out_date_time ||
+        booking?.checkOut ||
+        booking?.check_out ||
+        null;
+
+      const roomNumber = getRoomNumber(bookingId);
+      const fullName = buildFullName(g);
+      const nationality =
+        safeText(g.nationality || g.nationality_code || g.country || g.country_code) || "-";
+      const idNumber = buildIdNumber(g);
+      const currentAddress = buildAddress(g);
+      const remarks = safeText(g.remarks || g.note || g.notes) || "";
 
       return {
-        checkInDateTime: checkInDate,
-        roomNumber: getRoomNumber(bookingId),
-        fullName: String(anyGuest.fullName ?? anyGuest.full_name ?? "-"),
-        nationality: String(anyGuest.nationality ?? "—"),
-        idNumber: String(anyGuest.idNumber ?? anyGuest.id_number ?? ""),
-        currentAddress: String(anyGuest.currentAddress ?? anyGuest.current_address ?? ""),
-        checkOutDateTime: checkOutDate === "-" ? null : checkOutDate,
-        remarks: "",
+        checkInDateTime: formatDateOnly(checkIn),
+        roomNumber,
+        fullName,
+        nationality,
+        idNumber,
+        currentAddress,
+        checkOutDateTime: checkOut ? formatDateOnly(checkOut) : null,
+        remarks,
       };
     });
   }, [guests, getRoomNumber, getBookingById]);
 
   const filteredReportData = useMemo(() => {
     const searchQuery = searchTerm.trim().toLowerCase();
+
     const startTimestamp = dateToTimestamp(appliedDateRange.start);
     const endTimestamp = dateToTimestamp(appliedDateRange.end);
+
     const hasValidRange =
       !Number.isNaN(startTimestamp) &&
       !Number.isNaN(endTimestamp) &&
       startTimestamp <= endTimestamp;
 
-    return rawReportData.filter((record) => {
-      const checkInTimestamp = dateToTimestamp(record.checkInDateTime);
-      const passesDateFilter =
-        hasValidRange && !Number.isNaN(checkInTimestamp)
-          ? checkInTimestamp >= startTimestamp && checkInTimestamp <= endTimestamp
-          : true;
+    const endInclusive = hasValidRange ? endTimestamp : NaN;
 
-      if (!passesDateFilter) return false;
+    return rawReportData.filter((row) => {
+      if (hasValidRange) {
+        if (!guestInRange(row.checkInDateTime, startTimestamp, endInclusive)) return false;
+      }
 
       if (!searchQuery) return true;
 
-      const searchableText = [
-        record.fullName,
-        record.nationality,
-        record.idNumber,
-        record.roomNumber,
-        record.currentAddress,
+      const hay = [
+        row.fullName,
+        row.roomNumber,
+        row.idNumber,
+        row.nationality,
+        row.currentAddress,
+        row.checkInDateTime,
+        row.checkOutDateTime ?? "",
+        row.remarks,
       ]
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(searchQuery);
+      return hay.includes(searchQuery);
     });
   }, [rawReportData, appliedDateRange, searchTerm]);
 
   const indexOfLastEntry = currentPage * entriesPerPage;
   const indexOfFirstEntry = indexOfLastEntry - entriesPerPage;
   const currentEntries = filteredReportData.slice(indexOfFirstEntry, indexOfLastEntry);
-  const totalPages = Math.ceil(filteredReportData.length / entriesPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredReportData.length / entriesPerPage));
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
 
   const handlePageChange = (pageNumber: number) => {
     if (pageNumber > 0 && pageNumber <= totalPages) setCurrentPage(pageNumber);
@@ -604,134 +649,139 @@ const GovernmentReports: React.FC = () => {
     setCurrentPage(1);
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    if (!canExport) return;
+    window.print();
+  };
 
   const handleExportExcel = () => {
+    if (!canExport) return;
     if (!filteredReportData || filteredReportData.length === 0) {
       alert("No data to export");
       return;
     }
 
-    const exportRows = filteredReportData.map((record, index) => ({
-      No: index + 1,
-      "Check-In Time": formatDateOnly(record.checkInDateTime),
-      "Room Number": record.roomNumber,
-      "Full Name": record.fullName,
-      Nationality: record.nationality,
-      "ID Number": record.idNumber,
-      "Current Address": record.currentAddress,
-      "Check-Out Time": record.checkOutDateTime ? formatDateOnly(record.checkOutDateTime) : "",
-      Remarks: record.remarks ?? "",
+    const rows = filteredReportData.map((r, idx) => ({
+      "เลขลำดับ": idx + 1,
+      "วันเวลาที่เข้ามาพัก": r.checkInDateTime,
+      "ห้องพักเลขที่": r.roomNumber,
+      "ชื่อตัวและชื่อสกุล": r.fullName,
+      "สัญชาติ": r.nationality,
+      "เลขประจำตัวประชาชน / หนังสือเดินทาง": r.idNumber,
+      "ที่อยู่ปัจจุบัน (ตำบล/อำเภอ/จังหวัด/ประเทศ)": r.currentAddress,
+      "วันเวลาที่ออกไป": r.checkOutDateTime ?? "",
+      หมายเหตุ: r.remarks,
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportRows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "RR4_Report");
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "RR4");
 
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-    saveAs(blob, `RR4_Report_${toLocalDateInput(new Date())}.xlsx`);
+    const cols = Object.keys(rows[0] ?? {}).map((k) => ({
+      wch: Math.min(60, Math.max(k.length, ...rows.map((r: any) => String(r[k] ?? "").length)) + 2),
+    }));
+    (ws as any)["!cols"] = cols;
+
+    const arrayBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([arrayBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    const filename = `RR4_${appliedDateRange.start}_to_${appliedDateRange.end}.xlsx`;
+    saveAs(blob, filename);
   };
+
+  if (!canView) {
+    return <AccessDenied message="You do not have permission to view government reports." />;
+  }
 
   return (
     <div id="report-page" className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
       <style>{PRINT_STYLES}</style>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <PageHeader onExportExcel={handleExportExcel} onPrint={handlePrint} />
+        <PageHeader onExportExcel={handleExportExcel} onPrint={handlePrint} loading={isLoading || !canExport} />
 
-        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-          <div className="no-print p-5 border-b bg-gradient-to-r from-gray-50 to-white">
-            <div className="flex flex-col xl:flex-row xl:items-end gap-4 justify-between">
-              <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-                <SearchBar value={searchTerm} onChange={handleSearchChange} />
-                <EntriesPerPageSelector value={entriesPerPage} onChange={handleEntriesPerPageChange} />
-              </div>
-
-              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                <DateRangePicker dateRange={dateRange} onChange={setDateRange} />
-
-                <div className="flex items-center gap-2">
-                  <Button variant="primary" onClick={applyFilters}>
-                    Generate
-                  </Button>
-
-                  <div className="md:hidden flex items-center gap-2">
-                    <Button
-                      className="!bg-green-600 hover:!bg-green-700 focus:!ring-green-500"
-                      leftIcon={<FileSpreadsheet size={16} />}
-                      onClick={handleExportExcel}
-                    >
-                      Excel
-                    </Button>
-                    <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={handlePrint}>
-                      Print
-                    </Button>
-                  </div>
-                </div>
-              </div>
+        {/* Filters */}
+        <div className="no-print bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-end gap-4 justify-between">
+            <div className="flex flex-wrap items-end gap-4">
+              <DateRangePicker dateRange={dateRange} onChange={setDateRange} />
+              <Button onClick={applyFilters} disabled={isLoading}>
+                Apply
+              </Button>
             </div>
 
-            <FilterSummary
-              appliedRange={appliedDateRange}
-              searchTerm={searchTerm}
-              totalResults={filteredReportData.length}
-              isLoading={isLoading}
-            />
+            <div className="flex flex-wrap items-end gap-4">
+              <SearchBar value={searchTerm} onChange={handleSearchChange} />
+              <EntriesPerPageSelector value={entriesPerPage} onChange={handleEntriesPerPageChange} />
+            </div>
           </div>
 
-          <div id="print-table-only" className="overflow-x-auto">
-            <div className="px-5 pt-5 pb-2">
-              <h3 className="text-center font-bold text-lg">ทะเบียนผู้พัก (ร.ร.๔)</h3>
-              <p className="text-center text-xs text-gray-500 mt-1">
-                วันที่พิมพ์: {new Date().toLocaleString()}
-              </p>
-            </div>
+          <FilterSummary
+            appliedRange={appliedDateRange}
+            searchTerm={searchTerm}
+            totalResults={filteredReportData.length}
+            isLoading={isLoading}
+          />
+        </div>
 
-            <table className="min-w-full text-xs border-collapse border border-black">
+        {/* Table */}
+        <div className="mt-4 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="overflow-hidden">
+            <table className="w-full table-fixed border-collapse text-xs">
+              {/* ✅ กำหนดความกว้างแต่ละคอลัมน์ เพื่อให้ “เห็นครบ” */}
+              <colgroup>
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "25%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "7%" }} />
+              </colgroup>
+
               <ReportTableHeader />
 
-              <tbody className="bg-white text-black">
+              <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9} className="border border-black p-6 text-center">
-                      <span className="inline-flex items-center gap-2 text-gray-700">
+                    <td className="p-6 text-center text-gray-500" colSpan={9}>
+                      <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading data…
-                      </span>
+                        Loading...
+                      </div>
                     </td>
                   </tr>
-                ) : currentEntries.length > 0 ? (
-                  currentEntries.map((guest, index) => (
+                ) : currentEntries.length === 0 ? (
+                  <tr>
+                    <td className="p-6 text-center text-gray-500" colSpan={9}>
+                      No data found
+                    </td>
+                  </tr>
+                ) : (
+                  currentEntries.map((row, idx) => (
                     <ReportTableRow
-                      key={index}
-                      guest={guest}
-                      index={index}
-                      rowNumber={indexOfFirstEntry + index + 1}
+                      key={`${row.idNumber}-${row.checkInDateTime}-${idx}`}
+                      guest={row}
+                      index={idx}
+                      rowNumber={indexOfFirstEntry + idx + 1}
                     />
                   ))
-                ) : (
-                  <tr>
-                    <td colSpan={9} className="text-center p-6 border border-black text-gray-700">
-                      No guest data for the selected date range / search.
-                    </td>
-                  </tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          <div className="no-print flex flex-col sm:flex-row justify-between items-center p-5 border-t gap-4">
-            <div className="text-sm text-gray-600">
-              Showing {filteredReportData.length > 0 ? indexOfFirstEntry + 1 : 0} to{" "}
-              {Math.min(indexOfLastEntry, filteredReportData.length)} of {filteredReportData.length} entries
+          <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between no-print">
+            <div className="text-xs text-gray-500">
+              Page {currentPage} / {totalPages}
             </div>
-
             <PaginationControls currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
           </div>
         </div>
-
-        <div className="no-print h-6" />
       </div>
     </div>
   );

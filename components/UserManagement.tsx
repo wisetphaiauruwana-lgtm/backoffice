@@ -5,9 +5,13 @@ import { User, Role } from '../types';
 import Table from './ui/Table';
 import Button from './ui/Button';
 import Modal from './ui/Modal';
+import Toast from './ui/Toast';
 import Input from './ui/Input';
 import Select from './ui/Select';
 import { PlusCircle, Edit, Trash2, Mail, Hotel } from 'lucide-react';
+import { adminsService } from '../services/admins.service';
+import { usePermissions } from '../hooks/usePermissions';
+import AccessDenied from './ui/AccessDenied';
 
 const getInitials = (name: string): string => {
     if (!name) return '?';
@@ -26,15 +30,15 @@ const generateAvatarColors = (name: string): string => {
 };
 
 const getRoleBadge = (role: Role) => {
+    const roleLabel = role === 'owner' ? 'Owner' : role;
     const roleClasses: { [key in Role]: string } = {
-        'Super Admin': 'bg-purple-100 text-purple-800',
+        'owner': 'bg-indigo-100 text-indigo-800',
         'Manager': 'bg-blue-100 text-blue-800',
         'Receptionist': 'bg-green-100 text-green-800',
         'Cleaner': 'bg-gray-100 text-gray-700',
-        'Accountant': 'bg-yellow-100 text-yellow-800',
     };
     const style = roleClasses[role] || 'bg-gray-200 text-gray-800';
-    return <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${style}`}>{role}</span>;
+    return <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${style}`}>{roleLabel}</span>;
 };
 
 const getStatusIndicator = (status: 'Active' | 'Pending Invite') => {
@@ -80,20 +84,70 @@ const InvitationEmailPreview: React.FC<{ name: string, role: string, onClose: ()
 
 
 const UserManagement: React.FC = () => {
-    const { allUsers } = useData();
+    const { allUsers, setAllUsers } = useData();
+    const { can } = usePermissions();
+    const canView = can('rolesAndPermissions', 'view');
+    const canCreate = can('rolesAndPermissions', 'create');
+    const canDelete = can('rolesAndPermissions', 'delete');
     const [isInviteModalOpen, setInviteModalOpen] = useState(false);
     const [isPreviewingEmail, setIsPreviewingEmail] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Receptionist' as Role });
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setNewUser(prev => ({ ...prev, [e.target.id]: e.target.value }));
     };
 
-    const handleSendInvite = (e: React.FormEvent) => {
+    const handleSendInvite = async (e: React.FormEvent) => {
         e.preventDefault();
-        alert(`Invitation sent to ${newUser.name} at ${newUser.email} for the role of ${newUser.role}.`);
-        setInviteModalOpen(false);
-        setNewUser({ name: '', email: '', role: 'Receptionist' });
+        setToast(null);
+        if (!canCreate) return;
+        setIsSubmitting(true);
+        try {
+            const response = await adminsService.invite({
+                name: newUser.name.trim(),
+                email: newUser.email.trim(),
+                role: newUser.role,
+            });
+
+            const invitedUser: User = {
+                id: String(response?.id ?? response?.ID ?? response?.adminId ?? newUser.email),
+                name: String(response?.name ?? newUser.name),
+                email: String(response?.email ?? newUser.email),
+                role: (response?.role ?? newUser.role) as Role,
+                status: (response?.status ?? 'Pending Invite') as User['status'],
+                lastLogin: '',
+            };
+
+            setAllUsers(prev => [...prev, invitedUser]);
+            setToast({ message: 'Invitation sent successfully.', type: 'success' });
+            setInviteModalOpen(false);
+            setNewUser({ name: '', email: '', role: 'Receptionist' });
+        } catch (err: any) {
+            const message = err?.body?.error || err?.body?.message || err?.message || 'Failed to send invitation.';
+            setToast({ message, type: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDeleteUser = async (user: User) => {
+        if (!canDelete) return;
+        if (!window.confirm(`Remove ${user.name} from the system?`)) return;
+        setToast(null);
+        setIsDeleting(true);
+        try {
+            await adminsService.remove(String(user.id));
+            setAllUsers(prev => prev.filter(u => u.id !== user.id));
+            setToast({ message: 'User removed successfully.', type: 'success' });
+        } catch (err: any) {
+            const message = err?.body?.error || err?.body?.message || err?.message || 'Failed to remove user.';
+            setToast({ message, type: 'error' });
+        } finally {
+            setIsDeleting(false);
+        }
     };
 
     const columns = [
@@ -118,17 +172,22 @@ const UserManagement: React.FC = () => {
     ];
     
     const roleOptions: { value: Role, label: string }[] = [
+        { value: 'owner', label: 'Owner' },
         { value: 'Manager', label: 'Manager' },
         { value: 'Receptionist', label: 'Receptionist' },
         { value: 'Cleaner', label: 'Housekeeping' }, // Use Cleaner role but display as Housekeeping
-        { value: 'Accountant', label: 'Accountant' },
     ];
+
+    if (!canView) {
+        return <AccessDenied message="You do not have permission to view users." />;
+    }
 
     return (
         <div>
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-semibold text-gray-800">User Management</h2>
-                <Button leftIcon={<PlusCircle />} onClick={() => setInviteModalOpen(true)}>
+                <Button leftIcon={<PlusCircle />} onClick={() => setInviteModalOpen(true)} disabled={!canCreate}>
                     Add New User
                 </Button>
             </div>
@@ -137,12 +196,17 @@ const UserManagement: React.FC = () => {
                 columns={columns}
                 data={allUsers}
                 isScrollable={false}
-                renderRowActions={() => (
+                renderRowActions={(user) => (
                     <div className="flex items-center justify-center space-x-2">
                         <button title="Edit User" className="text-gray-400 hover:text-blue-600 p-1.5 rounded-md hover:bg-gray-100 transition-colors">
                             <Edit size={18} />
                         </button>
-                        <button title="Deactivate User" className="text-gray-400 hover:text-red-600 p-1.5 rounded-md hover:bg-gray-100 transition-colors">
+                        <button
+                            title="Remove User"
+                            className="text-gray-400 hover:text-red-600 p-1.5 rounded-md hover:bg-gray-100 transition-colors"
+                            onClick={() => handleDeleteUser(user)}
+                            disabled={isDeleting || !canDelete}
+                        >
                             <Trash2 size={18} />
                         </button>
                     </div>
@@ -169,7 +233,9 @@ const UserManagement: React.FC = () => {
                             <button type="button" className="text-sm font-medium text-gray-600 hover:text-gray-800 px-4 py-2" onClick={() => setInviteModalOpen(false)}>
                                 Cancel
                             </button>
-                            <Button type="submit" leftIcon={<Mail size={16}/>}>Send Invitation</Button>
+                            <Button type="submit" leftIcon={<Mail size={16}/>} disabled={isSubmitting} className={isSubmitting ? 'opacity-60 cursor-not-allowed' : ''}>
+                                {isSubmitting ? 'Sending...' : 'Send Invitation'}
+                            </Button>
                         </div>
                     </div>
                 </form>

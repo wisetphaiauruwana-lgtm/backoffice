@@ -1,12 +1,14 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useData } from '../contexts/DataContext';
 import { Role, RoleDetails, RolePermissions, User } from '../types';
 import Button from './ui/Button';
 import Modal from './ui/Modal';
-import Input from './ui/Input';
 import ConfirmationModal from './ui/ConfirmationModal';
-import { PlusCircle, Save, User as UserIcon, Edit, Trash2, ShieldCheck, Users } from 'lucide-react';
+import { PlusCircle, Save, ShieldCheck, Users } from 'lucide-react';
+import { rolesService } from '../services/roles.service';
+import { usePermissions } from '../hooks/usePermissions';
+import AccessDenied from './ui/AccessDenied';
 
 type PermissionModule = keyof RolePermissions;
 type PermissionAction = keyof RolePermissions[PermissionModule];
@@ -29,6 +31,13 @@ const permissionActionLabels: Record<string, string> = {
     verify: 'Verify',
     export: 'Export Data',
 };
+
+const ROLE_ORDER: Role[] = ['owner', 'Manager', 'Receptionist', 'Cleaner'];
+const roleDisplayLabels: Partial<Record<Role, string>> = {
+    owner: 'Owner',
+};
+
+const getRoleLabel = (role: Role) => roleDisplayLabels[role] ?? role;
 
 const PermissionCheckbox: React.FC<{
     checked: boolean;
@@ -54,7 +63,8 @@ const PermissionGroup: React.FC<{
 
     onPermissionChange: (action: PermissionAction, value: boolean) => void;
     onSelectAll: (value: boolean) => void;
-}> = ({ title, permissions, onPermissionChange, onSelectAll }) => {
+    disabled?: boolean;
+}> = ({ title, permissions, onPermissionChange, onSelectAll, disabled = false }) => {
     const allChecked = useMemo(() => Object.values(permissions).every(p => p === true), [permissions]);
     const isIndeterminate = useMemo(() => !allChecked && Object.values(permissions).some(p => p === true), [permissions, allChecked]);
 
@@ -66,12 +76,13 @@ const PermissionGroup: React.FC<{
         <div className="space-y-3 p-4 border rounded-lg bg-gray-50/50">
             <div className="flex justify-between items-center pb-2 border-b">
                 <h4 className="font-semibold text-gray-800">{title}</h4>
-                <label className="flex items-center space-x-2 cursor-pointer text-sm font-medium text-gray-600">
+                <label className={`flex items-center space-x-2 text-sm font-medium text-gray-600 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                     <input
                         type="checkbox"
                         checked={allChecked}
                         ref={el => { if (el) el.indeterminate = isIndeterminate; }}
                         onChange={handleSelectAllChange}
+                        disabled={disabled}
                         className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                     <span>Select All</span>
@@ -86,6 +97,7 @@ const PermissionGroup: React.FC<{
                                 label={permissionActionLabels[action]}
                                 checked={permissions[action as PermissionAction] || false}
                                 onChange={() => onPermissionChange(action as PermissionAction, !permissions[action as PermissionAction])}
+                                disabled={disabled}
                             />
                         );
                     }
@@ -98,6 +110,8 @@ const PermissionGroup: React.FC<{
 
 const RolesAndPermissions: React.FC = () => {
     const data = useData();
+    const { can } = usePermissions();
+    const canView = can('rolesAndPermissions', 'view');
 
     if (
         !data ||
@@ -112,7 +126,28 @@ const RolesAndPermissions: React.FC = () => {
         );
     }
 
+    if (!canView) {
+        return <AccessDenied message="You do not have permission to view roles & permissions." />;
+    }
+
     const { roles, setRoles, allUsers } = data;
+
+    const isOwner = useMemo(() => {
+        try {
+            const raw = localStorage.getItem('auth_admin');
+            if (!raw) return false;
+            const parsed = JSON.parse(raw);
+            const adminId = String(parsed?.id ?? '');
+            const adminEmail = String(parsed?.username ?? '').trim().toLowerCase();
+            const matched = allUsers.find(u =>
+                (adminId && String(u.id) === adminId) ||
+                (adminEmail && u.email.trim().toLowerCase() === adminEmail)
+            );
+            return matched?.role === 'owner';
+        } catch {
+            return false;
+        }
+    }, [allUsers]);
 
 
     const initialRole = useMemo(() => roles[0], [roles]);
@@ -124,10 +159,6 @@ const RolesAndPermissions: React.FC = () => {
 
     const [activeTab, setActiveTab] = useState<'permissions' | 'users'>('permissions');
 
-    const [isCreateRoleModalOpen, setCreateRoleModalOpen] = useState(false);
-    const [newRoleName, setNewRoleName] = useState('');
-
-    const [roleToDelete, setRoleToDelete] = useState<RoleDetails | null>(null);
     const [userToRemove, setUserToRemove] = useState<User | null>(null);
     const [isAssignUserModalOpen, setAssignUserModalOpen] = useState(false);
 
@@ -136,6 +167,12 @@ const RolesAndPermissions: React.FC = () => {
         return allUsers.filter(u => !memberIds.has(u.id));
     }, [allUsers, selectedRole]);
 
+    const orderedRoles = useMemo(() => {
+        const byName = new Map(roles.map((role) => [role.name, role]));
+        const ordered = ROLE_ORDER.map((name) => byName.get(name)).filter(Boolean) as RoleDetails[];
+        return ordered;
+    }, [roles]);
+
     const handleSelectRole = (role: RoleDetails) => {
         setSelectedRole(role);
         setEditedPermissions(role.permissions);
@@ -143,6 +180,7 @@ const RolesAndPermissions: React.FC = () => {
     };
 
     const handlePermissionChange = (module: PermissionModule, action: PermissionAction, value: boolean) => {
+        if (!isOwner) return;
         setEditedPermissions(prev => ({
             ...prev,
             [module]: {
@@ -153,6 +191,7 @@ const RolesAndPermissions: React.FC = () => {
     };
 
     const handleSelectAll = (module: PermissionModule, value: boolean) => {
+        if (!isOwner) return;
         setEditedPermissions(prev => {
             const newModulePermissions = { ...prev[module] };
             Object.keys(newModulePermissions).forEach(key => {
@@ -162,54 +201,41 @@ const RolesAndPermissions: React.FC = () => {
         });
     };
 
-    const handleSaveChanges = () => {
-        setRoles(prevRoles => prevRoles.map(role =>
-            role.id === selectedRole.id ? { ...role, permissions: editedPermissions } : role
-        ));
-        setSelectedRole(prev => ({ ...prev, permissions: editedPermissions }));
-        alert('Changes saved successfully!');
-    };
-
-    const handleCreateRole = () => {
-        if (!newRoleName.trim()) {
-            alert("Role name cannot be empty.");
+const handleSaveChanges = () => {
+        if (!isOwner) return;
+        const roleIdRaw = String(selectedRole.id ?? "").trim();
+        if (!/^\d+$/.test(roleIdRaw)) {
+            alert("Cannot save: role ID is not a backend ID. Please select a role loaded from the server.");
             return;
         }
-        // Mock creation logic
-        const newRole: RoleDetails = {
-            id: `ROLE_${newRoleName.toUpperCase().replace(' ', '_')}_${Date.now()}`,
-            name: newRoleName as Role, // This is a limitation of the mock setup
-            description: 'Newly created role.',
-            members: [],
-            permissions: { // Default empty permissions
-                bookingManagement: { view: false, create: false, edit: false, delete: false },
-                roomManagement: { view: false, create: false, edit: false, delete: false, editStatus: false },
-                customerList: { view: false, create: false, edit: false, delete: false, export: false },
-                tm30Verification: { view: false, submit: false, verify: false },
-                rolesAndPermissions: { view: false, create: false, edit: false, delete: false },
-            }
+
+        const flattenPermissions = (permissions: RolePermissions): string[] => {
+            const result: string[] = [];
+            Object.entries(permissions).forEach(([module, actions]) => {
+                Object.entries(actions).forEach(([action, enabled]) => {
+                    if (enabled) result.push(`${module}.${action}`);
+                });
+            });
+            return result;
         };
-        setRoles(prev => [...prev, newRole]);
-        setCreateRoleModalOpen(false);
-        setNewRoleName('');
-        handleSelectRole(newRole);
-    };
 
-    const handleConfirmDeleteRole = () => {
-        if (roleToDelete) {
-            setRoles(prev => prev.filter(r => r.id !== roleToDelete.id));
-            setRoleToDelete(null);
-            if (selectedRole.id === roleToDelete.id) {
-                const remainingRoles = roles.filter(r => r.id !== roleToDelete.id);
-                if (remainingRoles.length > 0) {
-                    handleSelectRole(remainingRoles[0]);
-                }
-            }
-
-        }
+        rolesService
+            .updatePermissions(roleIdRaw, flattenPermissions(editedPermissions))
+            .then(() => {
+                setRoles(prevRoles => prevRoles.map(role =>
+                    role.id === selectedRole.id ? { ...role, permissions: editedPermissions } : role
+                ));
+                setSelectedRole(prev => ({ ...prev, permissions: editedPermissions }));
+                alert('Changes saved successfully!');
+            })
+            .catch((err) => {
+                console.error(err);
+                alert('Failed to save permissions');
+            });
     };
 
     const handleConfirmRemoveUser = () => {
+        if (!isOwner) return;
         if (userToRemove) {
             const updatedMembers = selectedRole.members.filter(m => m.id !== userToRemove.id);
             const updatedRole = { ...selectedRole, members: updatedMembers };
@@ -220,6 +246,7 @@ const RolesAndPermissions: React.FC = () => {
     };
 
     const handleAssignUser = (user: User) => {
+        if (!isOwner) return;
         const updatedMembers = [...selectedRole.members, user];
         const updatedRole = { ...selectedRole, members: updatedMembers };
         setRoles(prev => prev.map(r => r.id === selectedRole.id ? updatedRole : r));
@@ -236,20 +263,15 @@ const RolesAndPermissions: React.FC = () => {
                 <div className="lg:col-span-1 bg-white p-4 rounded-xl shadow-sm flex flex-col">
                     <h2 className="text-lg font-semibold text-gray-700 mb-4 px-2">Roles</h2>
                     <div className="flex-1 space-y-1 overflow-y-auto scrollbar-none">
-                        {roles.map(role => (
+                        {orderedRoles.map(role => (
                             <button
                                 key={role.id}
                                 onClick={() => handleSelectRole(role)}
                                 className={`w-full text-left px-4 py-2.5 rounded-lg transition-colors text-sm font-medium ${selectedRole.id === role.id ? 'bg-blue-600 text-white shadow' : 'hover:bg-gray-100 text-gray-700'}`}
                             >
-                                {role.name}
+                                {getRoleLabel(role.name)}
                             </button>
                         ))}
-                    </div>
-                    <div className="mt-4 pt-4 border-t">
-                        <Button variant="secondary" className="w-full" leftIcon={<PlusCircle size={18} />} onClick={() => setCreateRoleModalOpen(true)}>
-                            Add New Role
-                        </Button>
                     </div>
                 </div>
 
@@ -257,12 +279,8 @@ const RolesAndPermissions: React.FC = () => {
                 <div className="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm flex flex-col min-h-0">
                     <div className="flex justify-between items-start pb-4 border-b">
                         <div>
-                            <h2 className="text-2xl font-bold text-gray-800 flex items-center">{selectedRole.name}</h2>
+                            <h2 className="text-2xl font-bold text-gray-800 flex items-center">{getRoleLabel(selectedRole.name)}</h2>
                             <p className="text-sm text-gray-500 mt-1">{selectedRole.description}</p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <Button variant="secondary" size="sm" leftIcon={<Edit size={16} />}>Edit Name</Button>
-                            <Button variant="danger" size="sm" leftIcon={<Trash2 size={16} />} onClick={() => setRoleToDelete(selectedRole)}>Delete Role</Button>
                         </div>
                     </div>
 
@@ -284,12 +302,13 @@ const RolesAndPermissions: React.FC = () => {
                                     permissions={editedPermissions[moduleKey as PermissionModule]}
                                     onPermissionChange={(action, value) => handlePermissionChange(moduleKey as PermissionModule, action, value)}
                                     onSelectAll={(value) => handleSelectAll(moduleKey as PermissionModule, value)}
+                                    disabled={!isOwner}
                                 />
                             ))
                         )}
                         {activeTab === 'users' && (
                             <div>
-                                <Button leftIcon={<PlusCircle size={18} />} onClick={() => setAssignUserModalOpen(true)}>Assign User</Button>
+                                <Button leftIcon={<PlusCircle size={18} />} onClick={() => setAssignUserModalOpen(true)} disabled={!isOwner}>Assign User</Button>
                                 <div className="mt-4 border rounded-lg overflow-hidden">
                                     <table className="min-w-full text-sm">
                                         <thead className="bg-gray-50">
@@ -305,7 +324,9 @@ const RolesAndPermissions: React.FC = () => {
                                                     <td className="px-4 py-2 font-medium text-gray-800">{member.name}</td>
                                                     <td className="px-4 py-2 text-gray-600">{member.email}</td>
                                                     <td className="px-4 py-2 text-center">
-                                                        <button onClick={() => setUserToRemove(member)} className="text-red-600 hover:text-red-800 font-medium hover:underline">Remove</button>
+                                                        <button onClick={() => setUserToRemove(member)} className={`font-medium hover:underline ${isOwner ? 'text-red-600 hover:text-red-800' : 'text-gray-400 cursor-not-allowed'}`} disabled={!isOwner}>
+                                                            Remove
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -321,40 +342,23 @@ const RolesAndPermissions: React.FC = () => {
 
                     {activeTab === 'permissions' && (
                         <div className="mt-auto pt-4 border-t flex justify-end">
-                            <Button leftIcon={<Save />} onClick={handleSaveChanges}>Save Changes</Button>
+                            <Button leftIcon={<Save />} onClick={handleSaveChanges} disabled={!isOwner}>
+                                Save Changes
+                            </Button>
                         </div>
                     )}
                 </div>
             </div>
-
-            {/* Modals */}
-            <Modal isOpen={isCreateRoleModalOpen} onClose={() => setCreateRoleModalOpen(false)} title="Add New Role">
-                <div className="space-y-4">
-                    <Input id="newRoleName" label="Role Name" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} placeholder="e.g. Housekeeping" autoFocus />
-                    <div className="flex justify-end pt-4 space-x-2">
-                        <Button variant="secondary" onClick={() => setCreateRoleModalOpen(false)}>Cancel</Button>
-                        <Button onClick={handleCreateRole}>Create Role</Button>
-                    </div>
-                </div>
-            </Modal>
-
-            <ConfirmationModal
-                isOpen={!!roleToDelete}
-                onClose={() => setRoleToDelete(null)}
-                onConfirm={handleConfirmDeleteRole}
-                title={`Delete Role: ${roleToDelete?.name}`}
-                message="Are you sure you want to delete this role? This action cannot be undone."
-            />
 
             <ConfirmationModal
                 isOpen={!!userToRemove}
                 onClose={() => setUserToRemove(null)}
                 onConfirm={handleConfirmRemoveUser}
                 title={`Remove User from Role`}
-                message={`Are you sure you want to remove ${userToRemove?.name} from the ${selectedRole.name} role?`}
+                message={`Are you sure you want to remove ${userToRemove?.name} from the ${getRoleLabel(selectedRole.name)} role?`}
             />
 
-            <Modal isOpen={isAssignUserModalOpen} onClose={() => setAssignUserModalOpen(false)} title={`Assign User to ${selectedRole.name}`}>
+            <Modal isOpen={isAssignUserModalOpen} onClose={() => setAssignUserModalOpen(false)} title={`Assign User to ${getRoleLabel(selectedRole.name)}`}>
                 <div className="max-h-96 overflow-y-auto">
                     {usersNotInRole.length > 0 ? (
                         <ul className="divide-y">

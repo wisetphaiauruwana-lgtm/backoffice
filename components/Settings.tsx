@@ -1,63 +1,114 @@
-
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import Input from './ui/Input';
 import Textarea from './ui/Textarea';
 import Button from './ui/Button';
-import UserManagement from './UserManagement'; // Import the new component
-import { Image, Building, FileText, BedDouble, Users, Mail, Save } from 'lucide-react';
-import { useData } from '../contexts/DataContext';
-
-
-type SettingsCategory = 'general' | 'policies' | 'rooms' | 'users' | 'email';
+import UserManagement from './UserManagement';
+import ChangePasswordModal from './ui/ChangePasswordModal';
+import { Image, Building, Users, Mail, Save, Lock, TestTubeDiagonal } from 'lucide-react';
+import { SettingsCategory } from '../types';
+import PasswordInput from './ui/PasswordInput';
+import Toast from './ui/Toast';
+import { settingsService } from '../services/settings.service';
+import { usePermissions } from '../hooks/usePermissions';
+import AccessDenied from './ui/AccessDenied';
 
 const Settings: React.FC = () => {
-    const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general');
-    const data = useData();
-    if (!data) {
-        return (
-            <div className="p-6 text-center text-gray-500">
-                Loading settings...
-            </div>
-        );
-    }
-
-    const roles = useMemo(() => data.roles ?? [], [data.roles]);
-    const allUsers = useMemo(() => data.allUsers ?? [], [data.allUsers]);
-
-
+    const { can } = usePermissions();
+    const canView = can('rolesAndPermissions', 'view');
+    const [activeCategory, setActiveCategory] = useState<SettingsCategory>('users');
+    const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
     const categories: { id: SettingsCategory; label: string; icon: React.ElementType }[] = [
         { id: 'general', label: 'General Information', icon: Building },
-        { id: 'policies', label: 'Hotel Policies', icon: FileText },
-        { id: 'rooms', label: 'Room Types & Pricing', icon: BedDouble },
         { id: 'users', label: 'Users & Roles', icon: Users },
         { id: 'email', label: 'Email Configuration', icon: Mail },
+        { id: 'security', label: 'Security', icon: Lock },
     ];
 
-    // Mock data for forms
     const [generalInfo, setGeneralInfo] = useState({
-        hotelName: 'Horizon Hotel & Suites',
-        address: '123 Beachfront Ave, Phuket, Thailand',
-        phone: '+66 76 123 456',
-        email: 'contact@horizonhotel.com',
-        website: 'https://www.horizonhotel.com',
+        hotelName: '',
+        address: '',
+        phone: '',
+        email: '',
+        website: '',
     });
 
-    const [policies, setPolicies] = useState({
-        checkIn: '14:00',
-        checkOut: '12:00',
-        vat: '7',
-        serviceCharge: '10',
+    const [emailConfig, setEmailConfig] = useState({
+        senderName: 'Cloud9 Hotel Reservations',
+        senderEmail: 'calgar.xiii@gmail.com',
+        smtpHost: 'smtp.gmail.com',
+        smtpPort: '587',
+        password: 'gsqn jkpm vqib rmjk',
     });
+
+    useEffect(() => {
+        if (activeCategory === 'general') {
+            settingsService
+                .getHotel()
+                .then((res: any) => {
+                    const h = res?.hotel || {};
+                    setGeneralInfo({
+                        hotelName: h.name || '',
+                        address: h.address || '',
+                        phone: h.phone || '',
+                        email: h.email || '',
+                        website: h.website || '',
+                    });
+                })
+                .catch(() => {
+                    setToast({ message: 'โหลดข้อมูลล้มเหลว', type: 'error' });
+                });
+        }
+    }, [activeCategory]);
 
     const handleGeneralInfoChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setGeneralInfo({ ...generalInfo, [e.target.id]: e.target.value });
     };
 
-    const handlePoliciesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setPolicies({ ...policies, [e.target.id]: e.target.value });
+    const handleEmailConfigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setEmailConfig({ ...emailConfig, [e.target.id]: e.target.value });
     };
 
+    const handleTestConnection = () => {
+        setToast(null);
+        console.log('Testing connection with:', emailConfig);
+        setTimeout(() => {
+            const isSuccess = Math.random() > 0.3;
+            if (isSuccess) {
+                setToast({ message: 'Connection successful! Test email sent.', type: 'success' });
+            } else {
+                setToast({ message: 'Connection failed. Please check credentials.', type: 'error' });
+            }
+        }, 1500);
+    };
+
+    const handleSaveEmailSettings = () => {
+        setToast(null);
+        console.log('Saving email settings:', emailConfig);
+        setTimeout(() => {
+            setToast({ message: 'Email settings saved successfully.', type: 'success' });
+        }, 1000);
+    };
+
+    const handleSaveGeneral = () => {
+        setToast(null);
+        settingsService
+            .updateHotel({
+                name: generalInfo.hotelName,
+                address: generalInfo.address,
+                phone: generalInfo.phone,
+                email: generalInfo.email,
+                website: generalInfo.website,
+                logo: '',
+            })
+            .then(() => {
+                setToast({ message: 'บันทึกเรียบร้อย', type: 'success' });
+            })
+            .catch(() => {
+                setToast({ message: 'บันทึกล้มเหลว', type: 'error' });
+            });
+    };
 
     const renderContent = () => {
         switch (activeCategory) {
@@ -93,57 +144,69 @@ const Settings: React.FC = () => {
                             <Input id="website" label="Website" value={generalInfo.website} onChange={handleGeneralInfoChange} />
                         </div>
                         <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
-                            <Button leftIcon={<Save size={18} />} onClick={() => alert('Settings saved!')}>Save Changes</Button>
+                            <Button leftIcon={<Save size={18} />} onClick={handleSaveGeneral}>Save Changes</Button>
                         </div>
                     </div>
                 );
-            case 'policies':
+            case 'email':
                 return (
                     <div>
-                        <h2 className="text-xl font-semibold text-gray-800 mb-6">Hotel Policies</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-lg">
-                            <Input id="checkIn" label="Standard Check-In Time" type="time" value={policies.checkIn} onChange={handlePoliciesChange} />
-                            <Input id="checkOut" label="Standard Check-Out Time" type="time" value={policies.checkOut} onChange={handlePoliciesChange} />
-                            <Input id="vat" label="VAT / Tax (%)" type="number" value={policies.vat} onChange={handlePoliciesChange} />
-                            <Input id="serviceCharge" label="Service Charge (%)" type="number" value={policies.serviceCharge} onChange={handlePoliciesChange} />
+                        <h2 className="text-xl font-semibold text-gray-800 mb-6">Email Configuration</h2>
+                        <div className="max-w-xl space-y-4">
+                            <Input id="senderName" label="Sender Name" value={emailConfig.senderName} onChange={handleEmailConfigChange} />
+                            <Input id="senderEmail" label="Sender Email (Username)" type="email" value={emailConfig.senderEmail} onChange={handleEmailConfigChange} />
+                            <Input id="smtpHost" label="SMTP Host" value={emailConfig.smtpHost} onChange={handleEmailConfigChange} />
+                            <Input id="smtpPort" label="SMTP Port" type="number" value={emailConfig.smtpPort} onChange={handleEmailConfigChange} />
+                            <PasswordInput id="password" label="Password / App Key" value={emailConfig.password} onChange={handleEmailConfigChange} />
                         </div>
-                        <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
-                            <Button leftIcon={<Save size={18} />} onClick={() => alert('Settings saved!')}>Save Changes</Button>
+                        <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end gap-2">
+                            <Button variant="secondary" leftIcon={<TestTubeDiagonal size={18} />} onClick={handleTestConnection}>Test Connection</Button>
+                            <Button leftIcon={<Save size={18} />} onClick={handleSaveEmailSettings}>Save Settings</Button>
                         </div>
                     </div>
                 );
             case 'users':
-                // ✅ กัน crash ถ้า data ยังไม่พร้อม
-                if (!Array.isArray(roles) || !Array.isArray(allUsers)) {
-                    return (
-                        <div className="text-center text-gray-500 py-10">
-                            Loading user data...
-                        </div>
-                    );
-                }
-
                 return <UserManagement />;
-
+            case 'security':
+                return (
+                    <div>
+                        <h2 className="text-xl font-semibold text-gray-800 mb-6">Security Settings</h2>
+                        <div className="max-w-md">
+                            <div className="bg-gray-50 p-4 rounded-lg border">
+                                <h3 className="font-semibold text-gray-700">Password</h3>
+                                <p className="text-sm text-gray-500 mt-1">Change your account password.</p>
+                                <Button className="mt-4" onClick={() => setChangePasswordModalOpen(true)}>
+                                    Change Password
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                );
             default:
-                return <div className="text-center text-gray-500 py-10">This section is under construction.</div>;
+                return <div className="text-center text-gray-500 py-10">Select a category to view its settings.</div>;
         }
     };
 
+    if (!canView) {
+        return <AccessDenied message="You do not have permission to view settings." />;
+    }
+
     return (
         <div>
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             <h1 className="text-3xl font-bold text-gray-800 mb-6">Settings</h1>
             <div className="flex flex-col md:flex-row gap-8">
-                {/* Left Sidebar */}
                 <aside className="w-full md:w-1/4 lg:w-1/5">
                     <nav className="space-y-1">
                         {categories.map(category => (
                             <button
                                 key={category.id}
                                 onClick={() => setActiveCategory(category.id)}
-                                className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors duration-200 ${activeCategory === category.id
-                                    ? 'bg-blue-600 text-white shadow'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
+                                className={`w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                                    activeCategory === category.id
+                                        ? 'bg-blue-600 text-white shadow'
+                                        : 'text-gray-600 hover:bg-gray-100'
+                                }`}
                             >
                                 <category.icon className="h-5 w-5 mr-3" />
                                 <span>{category.label}</span>
@@ -152,7 +215,6 @@ const Settings: React.FC = () => {
                     </nav>
                 </aside>
 
-                {/* Right Panel */}
                 <main className="flex-1">
                     <div className="bg-white p-6 rounded-xl shadow-sm min-h-[60vh] flex flex-col">
                         <div className="flex-1">
@@ -161,6 +223,10 @@ const Settings: React.FC = () => {
                     </div>
                 </main>
             </div>
+            <ChangePasswordModal
+                isOpen={isChangePasswordModalOpen}
+                onClose={() => setChangePasswordModalOpen(false)}
+            />
         </div>
     );
 };

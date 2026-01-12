@@ -3,18 +3,20 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom';
 import Table from './ui/Table';
 
-import { BookingStatus, Guest, Customer } from '../../types';
+import { BookingStatus, Guest, Customer } from '../types';
 import { useBookings } from '../contexts/BookingsContext';
 
 import ConfirmationModal from './ui/ConfirmationModal';
 import BookingDetailsModal from './BookingDetailsModal';
 import Toast from './ui/Toast';
+import AccessDenied from './ui/AccessDenied';
 
 import { Eye, Trash2, Search, PlusCircle, Calendar, Users, Filter, X } from 'lucide-react';
 import Button from './ui/Button';
 
 import { bookingsService } from '../services/bookings.service';
 import { guestsService } from "../services/guests.service";
+import { usePermissions } from '../hooks/usePermissions';
 
 /* ===========================
    Types
@@ -42,10 +44,23 @@ type FlatBookingRow = {
 
 const DEBOUNCE_MS = 300;
 
+const parseLocalDateValue = (value: string): Date | null => {
+  if (!value) return null;
+  const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const y = Number(dateOnlyMatch[1]);
+    const m = Number(dateOnlyMatch[2]);
+    const d = Number(dateOnlyMatch[3]);
+    return new Date(y, m - 1, d);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const formatDateOnly = (value?: string): string => {
   if (!value) return '';
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return '';
+  const d = parseLocalDateValue(value);
+  if (!d) return '';
 
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -58,6 +73,9 @@ const normalizeBookingStatus = (status: string): BookingStatus => {
     case 'confirmed':
     case 'confirm':
       return BookingStatus.Confirmed;
+
+    case 'pending':
+      return BookingStatus.Pending;
 
     case 'checked-in':
     case 'checkedin':
@@ -168,6 +186,11 @@ const mapGuestsFromApiToGuestList = (apiGuests: any[]) => {
 const BookingManagement: React.FC = () => {
   const { bookings, setBookings, refreshBookings } = useBookings();
   const navigate = useNavigate();
+  const { can } = usePermissions();
+  const canView = can('bookingManagement', 'view');
+  const canCreate = can('bookingManagement', 'create');
+  const canDelete = can('bookingManagement', 'delete');
+  const denyView = !canView;
 
   useEffect(() => {
     refreshBookings();
@@ -204,7 +227,16 @@ const BookingManagement: React.FC = () => {
       const rooms = Array.isArray(booking?.rooms) ? booking.rooms : [];
 
       const roomNumbers = rooms
-        .map((r: any) => r?.room?.roomCode ?? r?.room?.roomNumber)
+        .map((r: any) =>
+          r?.room?.roomCode ??
+          r?.room?.roomNumber ??
+          r?.room?.room_code ??
+          r?.room?.roomNo ??
+          r?.roomCode ??
+          r?.roomNumber ??
+          r?.room_code ??
+          r?.roomNo
+        )
         .filter(Boolean)
         .join(', ');
 
@@ -232,7 +264,7 @@ const BookingManagement: React.FC = () => {
         fullName: resolveFullName(customerObj, booking?.customer_name ?? booking?.full_name ?? booking?.fullName),
         email: customerObj?.email ?? booking?.email,
         roomNumbers: roomNumbers || 'N/A',
-        bookingStatus: normalizeBookingStatus(booking?.status),
+        bookingStatus: normalizeBookingStatus(booking?.status ?? booking?.bookingStatus ?? booking?.booking_status),
         checkInDate: formatDateOnly(booking?.checkInDate ?? booking?.check_in),
         checkOutDate: formatDateOnly(booking?.checkOutDate ?? booking?.check_out),
         adults,
@@ -435,6 +467,7 @@ const BookingManagement: React.FC = () => {
   =========================== */
 
   const handleConfirmDelete = useCallback(async () => {
+    if (!canDelete) return;
     if (!bookingToDelete || isDeleting) return;
 
     setIsDeleting(true);
@@ -455,7 +488,7 @@ const BookingManagement: React.FC = () => {
     } finally {
       setIsDeleting(false);
     }
-  }, [bookingToDelete, isDeleting, refreshBookings, setBookings]);
+  }, [bookingToDelete, isDeleting, refreshBookings, setBookings, canDelete]);
 
   /* ===========================
      Columns
@@ -525,6 +558,10 @@ const BookingManagement: React.FC = () => {
      Render
   =========================== */
 
+  if (denyView) {
+    return <AccessDenied message="You do not have permission to view bookings." />;
+  }
+
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30 p-8">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -540,6 +577,7 @@ const BookingManagement: React.FC = () => {
             leftIcon={<PlusCircle size={20} />}
             onClick={() => navigate('/bookings/create')}
             className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
+            disabled={!canCreate}
           >
             Create Booking
           </Button>
@@ -685,7 +723,7 @@ const BookingManagement: React.FC = () => {
             columns={columns}
             data={currentEntries}
             renderRowActions={(row: FlatBookingRow) => (
-              <div className="flex gap-3">
+              <div className="flex items-center justify-center gap-3">
                 <button
                   onClick={() => handleOpenModal(row)}
                   className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-all hover:scale-110 active:scale-95"
@@ -698,6 +736,7 @@ const BookingManagement: React.FC = () => {
                   onClick={() => setBookingToDelete(row)}
                   className="p-2 rounded-lg text-red-600 hover:bg-red-50 transition-all hover:scale-110 active:scale-95"
                   title="Delete Booking"
+                  disabled={!canDelete}
                 >
                   <Trash2 size={18} />
                 </button>
