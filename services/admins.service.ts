@@ -7,10 +7,16 @@ export const adminsService = {
     return await request(ENDPOINTS.admins, { method: "GET" });
   },
 
-  async invite(payload: { name: string; email: string; role: Role }) {
+  async invite(payload: { name: string; email: string; role: Role; fromEmail?: string }) {
+    const body = {
+      name: payload.name,
+      email: payload.email,
+      role: payload.role,
+      from_email: payload.fromEmail,
+    };
     return await request(`${ENDPOINTS.admins}/invite`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
   },
 
