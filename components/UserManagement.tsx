@@ -94,11 +94,13 @@ const UserManagement: React.FC = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const defaultFromEmail =
+        (import.meta as any)?.env?.VITE_INVITE_FROM_EMAIL || '';
     const [newUser, setNewUser] = useState({
         name: '',
         email: '',
         role: 'Receptionist' as Role,
-        fromEmail: '',
+        fromEmail: defaultFromEmail,
     });
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -130,7 +132,7 @@ const UserManagement: React.FC = () => {
             setAllUsers(prev => [...prev, invitedUser]);
             setToast({ message: 'Invitation sent successfully.', type: 'success' });
             setInviteModalOpen(false);
-            setNewUser({ name: '', email: '', role: 'Receptionist', fromEmail: '' });
+                            setNewUser({ name: '', email: '', role: 'Receptionist', fromEmail: defaultFromEmail });
         } catch (err: any) {
             const message = err?.body?.error || err?.body?.message || err?.message || 'Failed to send invitation.';
             setToast({ message, type: 'error' });
@@ -228,7 +230,14 @@ const UserManagement: React.FC = () => {
                     </p>
                     <Input id="name" label="Full Name" value={newUser.name} onChange={handleInputChange} required autoFocus placeholder="e.g., Sarah Conner"/>
                     <Input id="email" label="Email Address" type="email" value={newUser.email} onChange={handleInputChange} required placeholder="e.g., sarah@horizon.com" />
-                    <Input id="fromEmail" label="From Email (optional)" type="email" value={newUser.fromEmail} onChange={handleInputChange} placeholder="e.g., admin@yourdomain.com" />
+                    <Input
+                        id="fromEmail"
+                        label="From Email (optional)"
+                        type="email"
+                        value={newUser.fromEmail}
+                        onChange={handleInputChange}
+                        placeholder="e.g., wisetphaiauruwana@gmail.com"
+                    />
                     <Select id="role" label="Role / Permission" value={newUser.role} onChange={handleInputChange}>
                         {roleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Select>
