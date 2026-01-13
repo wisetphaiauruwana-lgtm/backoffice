@@ -480,9 +480,11 @@ const PaginationControls: React.FC<{
 // ============================================================================
 
 const GovernmentReports: React.FC = () => {
-  const { can } = usePermissions();
+  const { can, role } = usePermissions();
   const canView = can("tm30Verification", "view");
-  const canExport = can("tm30Verification", "export");
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  const canExport =
+    can("tm30Verification", "export") || normalizedRole === "owner" || normalizedRole === "manager";
   const initialWeek = getWeekRange();
 
   const [dateRange, setDateRange] = useState<DateRange>(initialWeek);
