@@ -181,6 +181,7 @@ const RoomDetailsModal: React.FC<RoomDetailsModalProps> = ({
         if (!room) return;
         setEditValues({
             roomCode: room.roomCode ?? room.roomNumber ?? "",
+            floor: room.floor ?? "",
             type: room.type,
             status: room.status,
             maxOccupancy: room.maxOccupancy,
@@ -192,6 +193,7 @@ const RoomDetailsModal: React.FC<RoomDetailsModalProps> = ({
         if (!room) return false;
         const current = {
             roomCode: room.roomCode ?? room.roomNumber ?? "",
+            floor: room.floor ?? "",
             type: room.type,
             status: room.status,
             maxOccupancy: room.maxOccupancy,
@@ -203,6 +205,7 @@ const RoomDetailsModal: React.FC<RoomDetailsModalProps> = ({
 
         if (canEditFields) {
             changes.push(String(editValues.roomCode ?? "") !== String(current.roomCode ?? ""));
+            changes.push(String(editValues.floor ?? "") !== String(current.floor ?? ""));
             changes.push(String(editValues.type ?? "") !== String(current.type ?? ""));
             changes.push(String(editValues.maxOccupancy ?? "") !== String(current.maxOccupancy ?? ""));
             changes.push(String(editValues.description ?? "") !== String(current.description ?? ""));
@@ -225,6 +228,10 @@ const RoomDetailsModal: React.FC<RoomDetailsModalProps> = ({
 
             if (canEdit && (editValues.roomCode ?? "") !== (room.roomCode ?? room.roomNumber ?? "")) {
                 updates.push(["roomCode", editValues.roomCode ?? ""]);
+                updates.push(["roomNumber", editValues.roomCode ?? ""]);
+            }
+            if (canEdit && (editValues.floor ?? "") !== (room.floor ?? "")) {
+                updates.push(["floor", editValues.floor ?? ""]);
             }
             if (canEdit && editValues.type !== undefined && editValues.type !== room.type) {
                 updates.push(["type", editValues.type]);
@@ -301,6 +308,19 @@ const RoomDetailsModal: React.FC<RoomDetailsModalProps> = ({
                         )}
                     </DetailItem>
 
+                    <DetailItem label="Floor">
+                        {isEditable && canEdit ? (
+                            <input
+                                type="text"
+                                value={String(editValues.floor ?? "")}
+                                onChange={(e) => setEditValues((prev) => ({ ...prev, floor: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        ) : (
+                            renderValue(room.floor ?? "—")
+                        )}
+                    </DetailItem>
+
                     <DetailItem label="Status">
                         {isEditable && canEditStatus ? (
                             <select
@@ -345,7 +365,10 @@ const RoomDetailsModal: React.FC<RoomDetailsModalProps> = ({
                                 <textarea
                                     rows={4}
                                     value={String(editValues.description ?? "")}
-                                    onChange={(e) => setEditValues((prev) => ({ ...prev, description: e.target.value }))}
+                                    maxLength={500}
+                                    onChange={(e) =>
+                                        setEditValues((prev) => ({ ...prev, description: e.target.value.slice(0, 500) }))
+                                    }
                                     className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                                 />
                             ) : (
