@@ -420,6 +420,26 @@ const RoomManagement: React.FC = () => {
     setRoomToDelete(null);
   };
 
+  const handleMarkAvailable = async (room: Room) => {
+    if (!canEditStatus) return;
+    const idCandidate =
+      (room as any).id ?? (room as any).ID ?? (room as any).roomId ?? (room as any).numericId;
+    const roomId = String(idCandidate ?? "").trim();
+    if (!roomId) {
+      alert("❌ Update failed: room id missing");
+      return;
+    }
+
+    try {
+      await roomsService.update(roomId, { status: RoomStatus.Available } as any);
+      await stableFetchRooms();
+      alert(`✅ Room ${room.roomCode ?? room.roomNumber ?? "—"} marked as Available.`);
+    } catch (error: any) {
+      console.error("Update room status failed:", error);
+      alert(`❌ Failed to update room status: ${error?.message || "Check console"}`);
+    }
+  };
+
   // ensure Table receives rows with `id` property
   const tableData: TableRoom[] = paginatedRooms.map((r) => {
     const idCandidate =
@@ -479,24 +499,31 @@ const RoomManagement: React.FC = () => {
       align: "center",
     },
     {
-      header: "CURRENT GUEST",
+      header: "CLEANED",
       accessor: (room: TableRoom) => {
-        const key = getRoomKey(room);
-        const customer = key ? guestInfoMap.get(key) : undefined;
-
-        if (room.status === RoomStatus.Occupied && customer) {
-          return (
-            <div
-              onDoubleClick={() => handleGuestDoubleClick(customer)}
-              className="cursor-pointer font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-              title="Double-click to view customer"
-            >
-              {customer.fullName}
-            </div>
-          );
-        }
-        return <span className="text-gray-400">—</span>;
+        if (!canEditStatus) return <span className="text-gray-400">—</span>;
+        if (room.status !== RoomStatus.Cleaning) return <span className="text-gray-400">—</span>;
+        return (
+          <button
+            type="button"
+            onClick={() => handleMarkAvailable(room)}
+            title="Mark Available"
+            aria-label={`Mark room ${room.roomCode ?? room.roomNumber} as Available`}
+            className="group inline-flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition-all duration-200 hover:scale-105 hover:bg-green-100 hover:shadow-md"
+          >
+            Done
+          </button>
+        );
       },
+      align: "center",
+    },
+    {
+      header: "ACCESS CODE",
+      accessor: (room: TableRoom) => (
+        <span className="font-mono font-semibold text-gray-800">
+          {room.accessCode || "—"}
+        </span>
+      ),
       align: "center",
     },
   ];

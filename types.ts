@@ -26,6 +26,7 @@ export interface Room {
   roomCode: string;         // canonical used in UI, e.g. "123v55"
   roomNumber?: string;      // camelCase variant
   room_number?: string;     // snake_case variant (backend)
+  accessCode?: string;      // 6-digit room access code
 
   // Basic attributes
   floor: string;
