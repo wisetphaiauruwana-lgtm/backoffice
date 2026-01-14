@@ -85,15 +85,19 @@ const InvitationEmailPreview: React.FC<{ name: string, role: string, onClose: ()
 
 const UserManagement: React.FC = () => {
     const { allUsers, setAllUsers } = useData();
-    const { can } = usePermissions();
+    const { can, role: currentRole } = usePermissions();
     const canView = can('rolesAndPermissions', 'view');
     const canCreate = can('rolesAndPermissions', 'create');
     const canDelete = can('rolesAndPermissions', 'delete');
+    const isOwner = currentRole === 'owner';
     const [isInviteModalOpen, setInviteModalOpen] = useState(false);
     const [isPreviewingEmail, setIsPreviewingEmail] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [editingRole, setEditingRole] = useState<Role>('Receptionist');
     const [newUser, setNewUser] = useState({
         name: '',
         email: '',
@@ -154,6 +158,38 @@ const UserManagement: React.FC = () => {
         }
     };
 
+    const openEditUser = (user: User) => {
+        if (!isOwner) return;
+        setEditingUser(user);
+        setEditingRole(user.role);
+        setIsEditModalOpen(true);
+    };
+
+    const handleUpdateRole = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!isOwner || !editingUser) return;
+        setToast(null);
+        setIsSubmitting(true);
+        try {
+            await adminsService.updateRole(String(editingUser.id), editingRole);
+            setAllUsers(prev =>
+                prev.map(u =>
+                    u.id === editingUser.id
+                        ? { ...u, role: editingRole }
+                        : u
+                )
+            );
+            setToast({ message: 'Role updated successfully.', type: 'success' });
+            setIsEditModalOpen(false);
+            setEditingUser(null);
+        } catch (err: any) {
+            const message = err?.body?.error || err?.body?.message || err?.message || 'Failed to update role.';
+            setToast({ message, type: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const columns = [
         {
             header: 'USER',
@@ -202,7 +238,12 @@ const UserManagement: React.FC = () => {
                 isScrollable={false}
                 renderRowActions={(user) => (
                     <div className="flex items-center justify-center space-x-2">
-                        <button title="Edit User" className="text-gray-400 hover:text-blue-600 p-1.5 rounded-md hover:bg-gray-100 transition-colors">
+                        <button
+                            title={isOwner ? "Edit User" : "Only Owner can edit roles"}
+                            className="text-gray-400 hover:text-blue-600 p-1.5 rounded-md hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => openEditUser(user)}
+                            disabled={!isOwner}
+                        >
                             <Edit size={18} />
                         </button>
                         <button
@@ -241,6 +282,43 @@ const UserManagement: React.FC = () => {
                                 {isSubmitting ? 'Sending...' : 'Send Invitation'}
                             </Button>
                         </div>
+                    </div>
+                </form>
+            </Modal>
+
+            <Modal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                title="Edit User Role"
+            >
+                <form onSubmit={handleUpdateRole} className="space-y-4">
+                    <div className="text-sm text-gray-600">
+                        <div className="font-medium text-gray-900">{editingUser?.name}</div>
+                        <div>{editingUser?.email}</div>
+                    </div>
+                    <Select
+                        id="edit-role"
+                        label="Role / Permission"
+                        value={editingRole}
+                        onChange={(e) => setEditingRole(e.target.value as Role)}
+                    >
+                        {roleOptions.map(option => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </Select>
+                    <div className="flex justify-end items-center pt-4 gap-2">
+                        <button
+                            type="button"
+                            className="text-sm font-medium text-gray-600 hover:text-gray-800 px-4 py-2"
+                            onClick={() => setIsEditModalOpen(false)}
+                        >
+                            Cancel
+                        </button>
+                        <Button type="submit" disabled={isSubmitting}>
+                            {isSubmitting ? 'Saving...' : 'Save Role'}
+                        </Button>
                     </div>
                 </form>
             </Modal>

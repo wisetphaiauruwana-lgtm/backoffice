@@ -70,9 +70,32 @@ const generateAvatarColors = (name: string) => {
 };
 
 const buildFaceImageUrl = (customer: Customer): string | null => {
-  const path = (customer as any).faceImagePath ?? (customer as any).face_image_path ?? "";
+  const raw =
+    (customer as any).faceImagePath ??
+    (customer as any).face_image_path ??
+    (customer as any).faceImage ??
+    (customer as any).face_image ??
+    (customer as any).photoUrl ??
+    (customer as any).photo_url ??
+    (customer as any).imageUrl ??
+    (customer as any).image_url ??
+    "";
+
+  const path = String(raw || "").trim();
   if (!path) return null;
-  return `${API_ORIGIN}/${path}`;
+
+  if (path.startsWith("data:image/")) return path;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+
+  if (path.startsWith("/uploads/")) return `${API_ORIGIN}${path}`;
+
+  const cleaned = path.replace(/^\/+/, "");
+  if (cleaned.startsWith("uploads/")) return `${API_ORIGIN}/${cleaned}`;
+  if (cleaned.startsWith("faces/") || cleaned.startsWith("documents/")) {
+    return `${API_ORIGIN}/uploads/${cleaned}`;
+  }
+
+  return `${API_ORIGIN}/${cleaned}`;
 };
 
 /* ---------------- UI helpers ---------------- */

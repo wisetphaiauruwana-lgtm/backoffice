@@ -1,11 +1,12 @@
 // src/components/Dashboard.tsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBookings } from "../contexts/BookingsContext";
 import { useData } from "../contexts/DataContext";
 import Table from "./ui/Table";
 import Modal from "./ui/Modal";
 import { guestsService } from "../services/guests.service";
+import { roomsService } from "../services/rooms.service";
 
 import { Customer, Guest, BookingStatus } from "../types";
 import {
@@ -191,10 +192,11 @@ const groupByBooking = (
 
 const Dashboard: React.FC = () => {
   const { bookings } = useBookings();
-  const { rooms = [] } = useData();
+  const { rooms = [], setRooms } = useData();
   const navigate = useNavigate();
   const today = useMemo(() => getLocalDateISO(), []);
   const [guests, setGuests] = useState<Guest[]>([]);
+  const didLoadRoomsRef = useRef(false);
 
   useEffect(() => {
     let isActive = true;
@@ -210,6 +212,26 @@ const Dashboard: React.FC = () => {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (didLoadRoomsRef.current) return;
+    didLoadRoomsRef.current = true;
+
+    if (rooms.length > 0) return;
+
+    let isActive = true;
+    roomsService
+      .fetchAll()
+      .then((data) => {
+        if (isActive) setRooms(data ?? []);
+      })
+      .catch((err) => {
+        console.error("[Dashboard] fetch rooms failed", err);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [rooms.length, setRooms]);
 
   // ✅ Booking Details Modal state
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);

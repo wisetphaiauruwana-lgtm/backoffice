@@ -697,17 +697,17 @@ const CreateBooking: React.FC = () => {
 
             {/* Section 3: Guest Information */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-300">
-              <div className="bg-gradient-to-r from-green-500 to-green-600 px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white/20 backdrop-blur-sm">
-                    <Users size={20} className="text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold text-white">Guest Information</h2>
-                    <p className="text-xs text-green-100">Enter details for all guests</p>
-                  </div>
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white/20 backdrop-blur-sm">
+                  <Users size={20} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Guest Information</h2>
+                  <p className="text-xs text-blue-100">Enter details for all guests</p>
                 </div>
               </div>
+            </div>
 
               <div className="p-6">
                 {!areGuestsValid && (
@@ -922,7 +922,7 @@ const CreateBooking: React.FC = () => {
 
                   <Button
                     size="lg"
-                    className="w-full !bg-gradient-to-r !from-green-600 !to-emerald-600 hover:!from-green-700 hover:!to-emerald-700 !shadow-lg hover:!shadow-xl !transform hover:!scale-[1.02] !transition-all !duration-200"
+                    className="w-full !bg-gradient-to-r !from-blue-600 !to-purple-600 hover:!from-blue-700 hover:!to-purple-700 !shadow-lg hover:!shadow-xl !transform hover:!scale-[1.02] !transition-all !duration-200"
                     disabled={isSubmitDisabled}
                     onClick={handleSubmitBooking}
                     aria-disabled={isSubmitDisabled}

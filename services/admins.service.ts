@@ -29,4 +29,11 @@ export const adminsService = {
       body: JSON.stringify(payload),
     });
   },
+
+  async updateRole(adminId: string, role: Role) {
+    return await request(`${ENDPOINTS.admins}/${adminId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    });
+  },
 };
