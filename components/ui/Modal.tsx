@@ -7,9 +7,16 @@ interface ModalProps {
   // FIX: Changed title from string to React.ReactNode to allow JSX elements.
   title: React.ReactNode;
   children: React.ReactNode;
+  showCloseButton?: boolean;
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+const Modal: React.FC<ModalProps> = ({
+  isOpen,
+  onClose,
+  title,
+  children,
+  showCloseButton = true,
+}) => {
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -39,13 +46,15 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
       >
         <div className="flex items-center justify-between p-5 border-b border-gray-200">
           <h3 id="modal-title" className="text-xl font-semibold text-gray-800">{title}</h3>
-          <button
-            onClick={onClose}
-            aria-label="Close modal"
-            className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <X size={24} />
-          </button>
+          {showCloseButton && (
+            <button
+              onClick={onClose}
+              aria-label="Close modal"
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <X size={24} />
+            </button>
+          )}
         </div>
         <div className="p-6 max-h-[70vh] overflow-y-auto scrollbar-none">
           {children}

@@ -1,5 +1,5 @@
 // src/components/Dashboard.tsx
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBookings } from "../contexts/BookingsContext";
 import { useData } from "../contexts/DataContext";
@@ -292,6 +292,22 @@ const Dashboard: React.FC = () => {
     return map;
   }, [guests]);
 
+  const getGuestNameForRow = useCallback(
+    (row: BookingGroupRow) => {
+      const bookingId = String(row.bookingId ?? "").trim();
+      const list = guestsByBookingId.get(bookingId) ?? [];
+      if (list.length === 0) return row.originalBooking.fullName ?? "—";
+
+      const main =
+        list.find((g: any) => g?.isMainGuest === true) ??
+        list.find((g: any) => String(g?.is_main_guest ?? "").toLowerCase() === "true") ??
+        list[0];
+
+      return normalizeGuestName(main, row.originalBooking.fullName ?? "—");
+    },
+    [guestsByBookingId]
+  );
+
   /* ---------------- Validation ---------------- */
   const isPersonComplete = (p: Customer | Guest) =>
     ["passportId", "occupation", "currentAddress"].every((f) => {
@@ -327,7 +343,10 @@ const Dashboard: React.FC = () => {
   }, [bookingGroupMap, guests, today]);
 
   const todaysCheckInRows: BookingGroupRow[] = useMemo(() => {
-    return groupByBooking(customers, (c) => dateOnly(c.checkInDate) === today);
+    return groupByBooking(
+      customers,
+      (c) => dateOnly(c.checkInDate) === today && c.bookingStatus === BookingStatus.CheckedIn
+    );
   }, [customers, today]);
 
   /* ---------------- KPI ---------------- */
@@ -395,7 +414,7 @@ const Dashboard: React.FC = () => {
     () => [
       {
         header: "Guest Name",
-        accessor: (r: BookingGroupRow) => r.originalBooking.fullName ?? "—",
+        accessor: (r: BookingGroupRow) => getGuestNameForRow(r),
       },
       {
         header: "Room",
@@ -406,7 +425,7 @@ const Dashboard: React.FC = () => {
         accessor: (r: BookingGroupRow) => getStatusBadge(r.bookingStatus),
       },
     ],
-    []
+    [getGuestNameForRow]
   );
 
   // (ยังเก็บไว้เผื่อคุณอยากใช้ที่อื่น)
@@ -432,8 +451,22 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
         <Kpi title="Total Rooms" value={stats.totalRooms} icon={<Hotel />} />
         <Kpi title="Available Rooms" value={stats.availableRooms} icon={<BedDouble />} />
-        <Kpi title="Today's Check-Ins" value={stats.todaysCheckIns} icon={<LogIn />} />
-        <Kpi title="Today's Check-Outs" value={stats.todaysCheckOuts} icon={<LogOut />} />
+        <Kpi
+          title="Today's Check-Ins"
+          value={stats.todaysCheckIns}
+          icon={<LogIn />}
+          onClick={() => navigate("/bookings", { state: { statusFilter: BookingStatus.CheckedIn } })}
+        />
+        <Kpi
+          title="Today's Check-Outs"
+          value={stats.todaysCheckOuts}
+          icon={<LogOut />}
+          onClick={() =>
+            navigate("/bookings", {
+              state: { statusFilter: BookingStatus.CheckedOut, dateFilter: today },
+            })
+          }
+        />
       </div>
 
       {/* Alerts */}
@@ -555,7 +588,7 @@ const Dashboard: React.FC = () => {
               <div className="bg-gray-50 border rounded-xl p-4">
                 <div className="text-xs text-gray-500">Guest</div>
                 <div className="text-lg font-semibold text-gray-900">
-                  {activeBookingRow.originalBooking.fullName ?? "—"}
+                  {getGuestNameForRow(activeBookingRow)}
                 </div>
               </div>
 
@@ -596,14 +629,19 @@ const Dashboard: React.FC = () => {
                 {(() => {
                   const bookingId = String(activeBookingRow.bookingId ?? "");
                   const apiGuests = guestsByBookingId.get(bookingId) ?? [];
-                  const fallbackGuests = activeBookingRow.originalBooking.guestList ?? [];
-                  const list = apiGuests.length > 0 ? apiGuests : fallbackGuests;
 
-                  if (list.length === 0) {
+                  if (apiGuests.length === 0) {
                     return <div className="text-sm text-gray-500">—</div>;
                   }
 
-                  return list.map((g: any, idx: number) => (
+                  const main =
+                    apiGuests.find((g: any) => g?.isMainGuest === true) ??
+                    apiGuests.find((g: any) => String(g?.is_main_guest ?? "").toLowerCase() === "true") ??
+                    apiGuests[0];
+
+                  const displayList = main ? [main] : apiGuests;
+
+                  return displayList.map((g: any, idx: number) => (
                     <div
                       key={`${bookingId}-${idx}`}
                       className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50"
@@ -653,17 +691,39 @@ type KpiProps = {
   title: string;
   value: React.ReactNode;
   icon?: React.ReactNode;
+  onClick?: () => void;
 };
 
-const Kpi: React.FC<KpiProps> = ({ title, value, icon }) => (
-  <div className="bg-white p-6 rounded-xl border shadow-sm">
-    <div className="flex justify-between items-center mb-2">
-      <div className="text-gray-500 text-sm">{title}</div>
-      {icon}
+const Kpi: React.FC<KpiProps> = ({ title, value, icon, onClick }) => {
+  const body = (
+    <>
+      <div className="flex justify-between items-center mb-2">
+        <div className="text-gray-500 text-sm">{title}</div>
+        {icon}
+      </div>
+      <div className="text-3xl font-bold text-gray-800">{value}</div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="bg-white p-6 rounded-xl border shadow-sm text-left hover:shadow-md hover:-translate-y-0.5 transition-all"
+        aria-label={`${title}`}
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-white p-6 rounded-xl border shadow-sm">
+      {body}
     </div>
-    <div className="text-3xl font-bold text-gray-800">{value}</div>
-  </div>
-);
+  );
+};
 
 type SectionProps = {
   title: string;

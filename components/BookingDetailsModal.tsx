@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, UserCircle, Calendar, Home, Mail, User } from 'lucide-react';
 import Modal from './ui/Modal';
 import { Customer } from '../types';
+import { guestsService } from '../services/guests.service';
 
 interface BookingDetailsModalProps {
   isOpen: boolean;
@@ -129,6 +130,7 @@ const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
 }) => {
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [mainBookerEmail, setMainBookerEmail] = useState<string | null>(null);
+  const [apiGuests, setApiGuests] = useState<any[]>([]);
 
   // Reset selection when modal is closed
   useEffect(() => {
@@ -141,74 +143,101 @@ const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
     if (mainBookerEmail === null) {
       setMainBookerEmail(customer.email);
     }
+  }, [customer, mainBookerEmail]);
 
-    const checked = isCheckedInOrLater(customer);
+  useEffect(() => {
+    if (!isOpen || !customer) return;
 
-    // After check-in: select the first guest in the guest list
-    if (checked) {
-      setSelectedGuestId("g-0"); // Select the first guest from the guest list
+    const bookingId = String((customer as any)?.bookingId ?? (customer as any)?.id ?? "").trim();
+    if (!bookingId) {
+      setApiGuests([]);
       return;
     }
 
-    // Before check-in: select the main booker
-    setSelectedGuestId(`main-${(customer as any).id}`);
-  }, [customer, mainBookerEmail]);
+    let isActive = true;
+    guestsService
+      .fetchByBookingId(bookingId)
+      .then((list) => {
+        if (isActive) setApiGuests(list ?? []);
+      })
+      .catch((err) => {
+        console.error("[BookingDetailsModal] fetch guests failed", err);
+        if (isActive) setApiGuests([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [isOpen, customer]);
 
   const rawGuestList = useMemo(() => {
     if (!customer) return [];
     const candidate = (customer as any)?.guestList ?? (customer as any)?.guests ?? [];
     return normalizeGuestList(candidate);
   }, [customer]);
-  const selectedPerson = useMemo(() => {
-  if (!customer) return null;
+  const mainGuest = useMemo(() => {
+    if (!apiGuests.length) return null;
+    return (
+      apiGuests.find((g: any) => g?.isMainGuest === true) ??
+      apiGuests.find((g: any) => String(g?.is_main_guest ?? "").toLowerCase() === "true") ??
+      apiGuests[0]
+    );
+  }, [apiGuests]);
 
-  const mainId = `main-${(customer as any).id}`;
-
-  let person: any = customer;
-
-  // ???????????????????????????? Main Booker ?????? customer
-  if (!selectedGuestId || selectedGuestId === mainId) {
-    person = customer;
-  } else {
-    const idxMatch = selectedGuestId.match(/^g-(\d+)$/);
-    if (idxMatch) {
-      const idx = Number(idxMatch[1]);
-      person = rawGuestList?.[idx] ?? customer;
+  useEffect(() => {
+    if (!isOpen || !customer) return;
+    if (mainGuest) {
+      setSelectedGuestId(String(mainGuest.id ?? "main"));
+      return;
     }
-  }
+    setSelectedGuestId(`main-${(customer as any).id}`);
+  }, [isOpen, customer, mainGuest]);
 
-  // ??????????? CreateBooking (customer.email) ????
-  return { ...person, email: customer.email };
-}, [customer, selectedGuestId, rawGuestList]);
+  const selectedPerson = useMemo(() => {
+    if (!customer) return null;
+    if (mainGuest) {
+      return { ...mainGuest, email: mainGuest?.email || customer.email };
+    }
 
-const guests = useMemo(() => {
-  if (!customer) return [];
+    const mainId = `main-${(customer as any).id}`;
+    let person: any = customer;
+    if (!selectedGuestId || selectedGuestId === mainId) {
+      person = customer;
+    } else {
+      const idxMatch = selectedGuestId.match(/^g-(\d+)$/);
+      if (idxMatch) {
+        const idx = Number(idxMatch[1]);
+        person = rawGuestList?.[idx] ?? customer;
+      }
+    }
+    return { ...person, email: customer.email };
+  }, [customer, selectedGuestId, rawGuestList, mainGuest]);
 
-  const checked = isCheckedInOrLater(customer); // เช็คว่าเช็กอินแล้วหรือยัง
+  const guests = useMemo(() => {
+    if (!customer) return [];
+    if (mainGuest) {
+      return [
+        {
+          id: String(mainGuest.id ?? "main"),
+          name: pickDisplayName(mainGuest),
+          role: "Main Guest",
+          email: mainGuest?.email || customer.email,
+        },
+      ];
+    }
 
-  // Main Booker จะถูกเลือกจาก rawGuestList
-  const listFromGuests = rawGuestList.map((g: any, idx: number) => {
-    const display = pickDisplayName(g);
-    return {
-      id: `g-${idx}`,
-      name: display !== "—" ? display : `Guest ${idx + 1}`,
-      role: g?.type ? `Guest (${g.type})` : "Guest",
-      email: g?.email || customer.email, // หากแขกไม่มี email ใช้ email จาก customer
-    };
-  });
+    const listFromGuests = rawGuestList.map((g: any, idx: number) => {
+      const display = pickDisplayName(g);
+      return {
+        id: `g-${idx}`,
+        name: display !== "—" ? display : `Guest ${idx + 1}`,
+        role: g?.type ? `Guest (${g.type})` : "Guest",
+        email: g?.email || customer.email,
+      };
+    });
 
-  // ถ้าเช็กอินแล้ว จะจะแสดงเฉพาะจาก guest list และเปลี่ยนชื่อจาก Guest เป็น Main Booker
-  if (checked) {
-    return listFromGuests.map((guest) => ({
-      ...guest,
-      name: guest.name === "Guest 1" ? "Main Booker" : guest.name, // เปลี่ยนชื่อจาก "Guest 1" เป็น "Main Booker"
-      email: customer.email, // ยืนยันว่าอีเมลจะยังคงเป็นของ customer
-    }));
-  }
-
-  // ถ้ายังไม่เช็กอิน จะแสดง Main Booker เป็นคนแรก
-  return [{ id: `main-${(customer as any).id}`, name: "Main Booker", role: "Main Booker", email: customer.email }, ...listFromGuests];
-}, [customer, rawGuestList]);
+    return [{ id: `main-${(customer as any).id}`, name: "Main Booker", role: "Main Booker", email: customer.email }, ...listFromGuests];
+  }, [customer, rawGuestList, mainGuest]);
 
   const roomsText = useMemo(() => {
     if (!customer) return '—';
@@ -231,7 +260,7 @@ const guests = useMemo(() => {
   if (!customer) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="5xl" title={<div className="flex w-full items-center gap-4 pr-8"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30"><ShieldCheck className="text-white" size={24} /></div><div><h2 className="font-semibold text-gray-900">Booking Details</h2><div className="mt-0.5 flex items-center gap-2"><span className="text-xs font-medium text-gray-500">Reference</span><span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">#{(customer as any).bookingId}</span></div></div></div>}>
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="full" title={<div className="flex w-full items-center gap-4 pr-8"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30"><ShieldCheck className="text-white" size={24} /></div><div><h2 className="font-semibold text-gray-900">Booking Details</h2><div className="mt-0.5 flex items-center gap-2"><span className="text-xs font-medium text-gray-500">Reference</span><span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">#{(customer as any).bookingId}</span></div></div></div>}>
       <div className="-mx-6 -mb-6 bg-gradient-to-br from-gray-50 to-white">
         <div className="flex min-h-[480px]">
           {/* LEFT - Guest List */}

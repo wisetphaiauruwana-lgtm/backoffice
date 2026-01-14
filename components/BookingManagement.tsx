@@ -1,6 +1,6 @@
 // src/components/BookingManagement.tsx
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Table from './ui/Table';
 
 import { BookingStatus, Guest, Customer } from '../types';
@@ -186,6 +186,7 @@ const mapGuestsFromApiToGuestList = (apiGuests: any[]) => {
 const BookingManagement: React.FC = () => {
   const { bookings, setBookings, refreshBookings } = useBookings();
   const navigate = useNavigate();
+  const location = useLocation();
   const { can } = usePermissions();
   const canView = can('bookingManagement', 'view');
   const canCreate = can('bookingManagement', 'create');
@@ -195,6 +196,21 @@ const BookingManagement: React.FC = () => {
   useEffect(() => {
     refreshBookings();
   }, [refreshBookings]);
+
+  useEffect(() => {
+    const filter = (location.state as any)?.statusFilter;
+    const dateFilter = (location.state as any)?.dateFilter;
+    if (!filter && !dateFilter) return;
+
+    if (filter) {
+      setStatusFilter(filter);
+    }
+    if (dateFilter) {
+      setDateRange({ start: dateFilter, end: dateFilter });
+    }
+    setCurrentPage(1);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location, navigate]);
 
   const [statusFilter, setStatusFilter] = useState<'Current & Upcoming' | BookingStatus | 'All'>('All');
   const [currentPage, setCurrentPage] = useState(1);
@@ -214,6 +230,49 @@ const BookingManagement: React.FC = () => {
   const debounceTimerRef = useRef<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [guestCountByBookingId, setGuestCountByBookingId] = useState<Record<number, number>>({});
+  const [apiGuests, setApiGuests] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isActive = true;
+    guestsService
+      .fetchAll()
+      .then((list) => {
+        if (isActive) setApiGuests(list ?? []);
+      })
+      .catch((err) => {
+        console.warn("[BookingManagement] fetchAll guests failed", err);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const mainGuestNameByBookingId = useMemo(() => {
+    const map: Record<string, string> = {};
+    const grouped = new Map<string, any[]>();
+
+    (apiGuests ?? []).forEach((g: any) => {
+      const bookingId = String(g?.bookingId ?? g?.booking_id ?? "").trim();
+      if (!bookingId) return;
+      const list = grouped.get(bookingId) ?? [];
+      list.push(g);
+      grouped.set(bookingId, list);
+    });
+
+    grouped.forEach((list, bookingId) => {
+      const main =
+        list.find((g: any) => g?.isMainGuest === true) ??
+        list.find((g: any) => String(g?.is_main_guest ?? "").toLowerCase() === "true") ??
+        list[0];
+
+      const name = resolveFullName(main);
+      if (name && name !== "—") {
+        map[bookingId] = name;
+      }
+    });
+
+    return map;
+  }, [apiGuests]);
 
   /* ===========================
      Flatten bookings -> rows
@@ -256,15 +315,21 @@ const BookingManagement: React.FC = () => {
       const guestList = normalizeGuestList(rawGuestList);
 
       const customerObj = booking?.customer ?? {};
+      const status = normalizeBookingStatus(booking?.status ?? booking?.bookingStatus ?? booking?.booking_status);
+      const key = String(bookingId || safeBookingId);
+      const mainGuestName =
+        (status === BookingStatus.CheckedIn || status === BookingStatus.CheckedOut)
+          ? mainGuestNameByBookingId[key]
+          : undefined;
 
       return {
         id: `booking-${safeBookingId}`,
         bookingId: bookingId || safeBookingId,
         customerId: customerObj?.id ?? booking?.customerId,
-        fullName: resolveFullName(customerObj, booking?.customer_name ?? booking?.full_name ?? booking?.fullName),
+        fullName: mainGuestName ?? resolveFullName(customerObj, booking?.customer_name ?? booking?.full_name ?? booking?.fullName),
         email: customerObj?.email ?? booking?.email,
         roomNumbers: roomNumbers || 'N/A',
-        bookingStatus: normalizeBookingStatus(booking?.status ?? booking?.bookingStatus ?? booking?.booking_status),
+        bookingStatus: status,
         checkInDate: formatDateOnly(booking?.checkInDate ?? booking?.check_in),
         checkOutDate: formatDateOnly(booking?.checkOutDate ?? booking?.check_out),
         adults,
@@ -272,7 +337,7 @@ const BookingManagement: React.FC = () => {
         guestList,
       } as FlatBookingRow;
     });
-  }, [bookings]);
+  }, [bookings, mainGuestNameByBookingId]);
 
   /* ===========================
      Debounce Search

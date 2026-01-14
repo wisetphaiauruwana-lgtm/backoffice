@@ -5,12 +5,22 @@ import Button from './Button';
 interface ConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onCancel?: () => void;
   onConfirm: () => void;
   title: string;
   message: string;
 }
 
-const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, onConfirm, title, message }) => {
+const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
+  isOpen,
+  onClose,
+  onCancel,
+  onConfirm,
+  title,
+  message,
+}) => {
+  const handleClose = onCancel ?? onClose;
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -29,11 +39,11 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title}>
+    <Modal isOpen={isOpen} onClose={handleClose} title={title} showCloseButton={false}>
       <div>
         <p className="text-gray-600">{message}</p>
         <div className="flex justify-end pt-6 space-x-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={handleClose}>
             Cancel
           </Button>
           <Button type="button" variant="danger" onClick={onConfirm} autoFocus>
