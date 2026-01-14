@@ -535,7 +535,12 @@ const GovernmentReports: React.FC = () => {
   );
 
   const rawReportData = useMemo<ReportGuest[]>(() => {
-    return (guests ?? []).map((guest) => {
+    const activeGuests = (guests ?? []).filter((g: any) => {
+      const deletedAt = g?.deletedAt ?? g?.deleted_at ?? g?.DeletedAt;
+      return !deletedAt;
+    });
+
+    return activeGuests.map((guest) => {
       const g: any = guest as any;
 
       const bookingId = g.bookingId ?? g.booking_id ?? g.booking?.id ?? g.booking?.ID ?? null;

@@ -117,7 +117,7 @@ const InfoBlock: React.FC<{ label: string; value?: string; icon?: React.ReactNod
       {icon && <span className="text-gray-400 group-hover:text-blue-500 transition-colors">{icon}</span>}
       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</span>
     </div>
-    <span className="text-base text-gray-900 ml-6">{value || '—'}</span>
+    <span className="text-base text-gray-900 ml-6 break-all whitespace-normal">{value || '—'}</span>
   </div>
 );
 
@@ -236,7 +236,16 @@ const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
       };
     });
 
-    return [{ id: `main-${(customer as any).id}`, name: "Main Booker", role: "Main Booker", email: customer.email }, ...listFromGuests];
+    const mainBookerName = pickDisplayName(customer);
+    return [
+      {
+        id: `main-${(customer as any).id}`,
+        name: mainBookerName !== "—" ? mainBookerName : "Main Booker",
+        role: "Main Booker",
+        email: customer.email,
+      },
+      ...listFromGuests,
+    ];
   }, [customer, rawGuestList, mainGuest]);
 
   const roomsText = useMemo(() => {
@@ -260,11 +269,11 @@ const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
   if (!customer) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="full" title={<div className="flex w-full items-center gap-4 pr-8"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30"><ShieldCheck className="text-white" size={24} /></div><div><h2 className="font-semibold text-gray-900">Booking Details</h2><div className="mt-0.5 flex items-center gap-2"><span className="text-xs font-medium text-gray-500">Reference</span><span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">#{(customer as any).bookingId}</span></div></div></div>}>
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="6xl" title={<div className="flex w-full items-center gap-4 pr-8"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30"><ShieldCheck className="text-white" size={24} /></div><div><h2 className="font-semibold text-gray-900">Booking Details</h2><div className="mt-0.5 flex items-center gap-2"><span className="text-xs font-medium text-gray-500">Reference</span><span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">#{(customer as any).bookingId}</span></div></div></div>}>
       <div className="-mx-6 -mb-6 bg-gradient-to-br from-gray-50 to-white">
-        <div className="flex min-h-[480px]">
+        <div className="flex min-h-[520px]">
           {/* LEFT - Guest List */}
-          <aside className="w-1/3 border-r border-gray-200 bg-white px-6 py-8">
+          <aside className="w-1/4 border-r border-gray-200 bg-white px-6 py-8">
             <div className="mb-6 flex items-center gap-2">
               <User size={18} className="text-gray-400" />
               <h4 className="font-semibold text-gray-700">Guest List</h4>
@@ -303,7 +312,7 @@ const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
           </aside>
 
           {/* RIGHT - Guest Details */}
-          <section className="w-2/3 px-10 py-8">
+          <section className="w-4/5 px-12 py-8">
             <div className="mb-8 flex items-center gap-3 border-b border-gray-200 pb-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
                 <UserCircle size={20} className="text-blue-600" />

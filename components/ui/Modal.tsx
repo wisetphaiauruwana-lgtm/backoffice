@@ -8,6 +8,7 @@ interface ModalProps {
   title: React.ReactNode;
   children: React.ReactNode;
   showCloseButton?: boolean;
+  maxWidth?: string;
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -16,6 +17,7 @@ const Modal: React.FC<ModalProps> = ({
   title,
   children,
   showCloseButton = true,
+  maxWidth = "2xl",
 }) => {
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
@@ -40,7 +42,7 @@ const Modal: React.FC<ModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-2xl transform transition-all animate-in-up"
+        className={`bg-white rounded-xl shadow-2xl w-full max-w-${maxWidth} transform transition-all animate-in-up`}
         onClick={(e) => e.stopPropagation()}
         style={{ animation: 'slide-in-from-bottom 0.3s ease-out' }}
       >

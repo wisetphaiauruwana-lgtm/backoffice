@@ -19,10 +19,18 @@ import { DataProvider } from './contexts/DataContext';
 import { BookingsProvider } from './contexts/BookingsContext';
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const token = localStorage.getItem('auth_token');
+    const admin = localStorage.getItem('auth_admin');
+    return Boolean(token || admin);
+  });
 
   const handleLogin = () => setIsAuthenticated(true);
-  const handleLogout = () => setIsAuthenticated(false);
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_admin');
+    setIsAuthenticated(false);
+  };
 
   return (
     <DataProvider>
