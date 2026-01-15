@@ -236,6 +236,9 @@ export interface PermissionActions {
   submit?: boolean;
   verify?: boolean;
   export?: boolean;
+  send?: boolean;
+  config?: boolean;
+  reset?: boolean;
 }
 
 export interface RolePermissions {
@@ -244,6 +247,9 @@ export interface RolePermissions {
   customerList: PermissionActions;
   tm30Verification: PermissionActions;
   rolesAndPermissions: PermissionActions;
+  emailManagement: PermissionActions;
+  roomAccess: PermissionActions;
+  auditLogs: PermissionActions;
 }
 
 export interface RoleDetails {

@@ -89,6 +89,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       verify: false,
       export: false,
     },
+    emailManagement: {
+      view: false,
+      send: false,
+      config: false,
+    },
+    roomAccess: {
+      view: false,
+      reset: false,
+    },
+    auditLogs: {
+      view: false,
+      export: false,
+    },
   });
 
   const ensureDefaultRoles = (rolesList: RoleDetails[]): RoleDetails[] => {

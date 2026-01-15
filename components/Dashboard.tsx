@@ -323,24 +323,11 @@ const Dashboard: React.FC = () => {
   }, [customers]);
 
   const todaysCheckOutRows: BookingGroupRow[] = useMemo(() => {
-    const rows: BookingGroupRow[] = [];
-    const seen = new Set<string>();
-
-    (guests ?? []).forEach((g: any) => {
-      const bookingId = String(g?.bookingId ?? g?.booking_id ?? "").trim();
-      if (!bookingId || seen.has(bookingId)) return;
-
-      const row = bookingGroupMap.get(bookingId);
-      if (!row) return;
-
-      if (dateOnly(row.originalBooking.checkOutDate) !== today) return;
-
-      seen.add(bookingId);
-      rows.push(row);
-    });
-
-    return rows;
-  }, [bookingGroupMap, guests, today]);
+    return groupByBooking(
+      customers,
+      (c) => dateOnly(c.checkOutDate) === today && c.bookingStatus === BookingStatus.CheckedOut
+    );
+  }, [customers, today]);
 
   const todaysCheckInRows: BookingGroupRow[] = useMemo(() => {
     return groupByBooking(

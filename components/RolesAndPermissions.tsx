@@ -19,6 +19,9 @@ const permissionModuleLabels: Record<PermissionModule, string> = {
     customerList: 'Customer List',
     tm30Verification: 'TM.30 Verification',
     rolesAndPermissions: 'Roles & Permissions',
+    emailManagement: 'Email Management',
+    roomAccess: 'Room Access',
+    auditLogs: 'Audit Logs',
 };
 
 const permissionActionLabels: Record<string, string> = {
@@ -30,6 +33,9 @@ const permissionActionLabels: Record<string, string> = {
     submit: 'Submit',
     verify: 'Verify',
     export: 'Export Data',
+    send: 'Send',
+    config: 'Config',
+    reset: 'Reset',
 };
 
 const ROLE_ORDER: Role[] = ['owner', 'Manager', 'Receptionist', 'Cleaner'];
