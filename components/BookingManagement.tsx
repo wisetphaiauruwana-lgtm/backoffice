@@ -25,6 +25,7 @@ import { usePermissions } from '../hooks/usePermissions';
 type FlatBookingRow = {
   id: string; // unique row id
   bookingId: number; // real booking id
+  displayIndex?: number;
   customerId?: number;
   fullName?: string;
   email?: string;
@@ -405,7 +406,16 @@ const BookingManagement: React.FC = () => {
       });
     }
 
-    return data;
+    data.sort((a, b) => {
+      const aId = Number(a.bookingId) || 0;
+      const bId = Number(b.bookingId) || 0;
+      return aId - bId;
+    });
+
+    return data.map((row, idx) => ({
+      ...row,
+      displayIndex: idx + 1,
+    }));
   }, [flattenedBookings, statusFilter, debouncedSearch, dateRange]);
 
   /* ===========================
@@ -562,8 +572,10 @@ const BookingManagement: React.FC = () => {
   const columns = useMemo(
     () => [
       {
-        header: 'BOOKING ID',
-        accessor: (row: FlatBookingRow) => <span className="font-bold text-gray-900">#{row.bookingId}</span>,
+        header: 'ID',
+        accessor: (row: FlatBookingRow) => (
+          <span className="font-bold text-gray-900">{row.displayIndex ?? row.bookingId}</span>
+        ),
       },
       {
         header: 'GUEST NAME',
